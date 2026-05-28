@@ -173,6 +173,18 @@ class DisputeCaseResponse(BaseModel):
     structured_reasoning: Optional[str]
     status: str
     workflow_ready: bool
+    # Enterprise fields
+    assigned_queue: Optional[str] = None
+    assigned_analyst: Optional[str] = None
+    priority_score: float = 0.0
+    sla_deadline: Optional[str] = None
+    sla_breached: bool = False
+    sla_paused_at: Optional[str] = None
+    duplicate_of: Optional[str] = None
+    requires_manual_review: bool = False
+    manual_review_reason: Optional[str] = None
+    locked_by: Optional[str] = None
+    locked_at: Optional[str] = None
     created_at: str
     updated_at: Optional[str]
 

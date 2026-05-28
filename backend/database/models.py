@@ -5,6 +5,9 @@ Tables:
   - dispute_cases     : Core dispute case with AI analysis results
   - audit_logs        : Immutable audit trail for every workflow action
   - workflow_states   : Per-case workflow execution snapshots
+  - case_notes        : Analyst notes attached to a case
+  - document_requests : Formal document requests sent to customers
+  - case_locks        : 30-minute pessimistic locks for concurrent analyst safety
 """
 import json
 from datetime import datetime, timezone
@@ -57,7 +60,7 @@ class DisputeCase(Base):
     dispute_reason        = Column(String(256), nullable=True)
     fraud_selected        = Column(Boolean, default=False)
 
-    # AI Analysis outputs
+    # AI Analysis outputs (renamed for ops display — see status_mapping_service)
     dispute_category      = Column(String(128), nullable=True)
     fraud_suspicion       = Column(Boolean, default=False)
     customer_intent_summary = Column(Text, nullable=True)
@@ -71,6 +74,31 @@ class DisputeCase(Base):
     workflow_ready        = Column(Boolean, default=False)
     current_stage         = Column(String(64), default="intake")
 
+    # ── Enterprise fields ──────────────────────────────────────────────────────
+
+    # Queue & assignment
+    assigned_queue        = Column(String(64), nullable=True, index=True)
+    assigned_analyst      = Column(String(128), nullable=True, index=True)
+
+    # Priority scoring (weighted numeric, higher = more urgent)
+    priority_score        = Column(Float, default=0.0)
+
+    # SLA tracking
+    sla_deadline          = Column(DateTime, nullable=True)
+    sla_breached          = Column(Boolean, default=False)
+    sla_paused_at         = Column(DateTime, nullable=True)   # non-null when SLA is paused
+
+    # Duplicate detection
+    duplicate_of          = Column(String(64), nullable=True)  # case_id of original if duplicate
+
+    # Manual review flag
+    requires_manual_review = Column(Boolean, default=False)
+    manual_review_reason  = Column(Text, nullable=True)
+
+    # Case lock (pessimistic locking for concurrent analysts)
+    locked_by             = Column(String(128), nullable=True)
+    locked_at             = Column(DateTime, nullable=True)
+
     # Timestamps
     created_at            = Column(DateTime, default=_utc_now, nullable=False)
     updated_at            = Column(DateTime, default=_utc_now, onupdate=_utc_now)
@@ -78,6 +106,8 @@ class DisputeCase(Base):
     # Relationships
     audit_logs            = relationship("AuditLog", back_populates="dispute_case", cascade="all, delete-orphan")
     workflow_states       = relationship("WorkflowState", back_populates="dispute_case", cascade="all, delete-orphan")
+    case_notes            = relationship("CaseNote", back_populates="dispute_case", cascade="all, delete-orphan")
+    document_requests     = relationship("DocumentRequest", back_populates="dispute_case", cascade="all, delete-orphan")
 
     def to_dict(self) -> dict:
         return {
@@ -105,6 +135,18 @@ class DisputeCase(Base):
             "structured_reasoning": self.structured_reasoning,
             "status": self.status,
             "workflow_ready": self.workflow_ready,
+            # Enterprise fields
+            "assigned_queue": self.assigned_queue,
+            "assigned_analyst": self.assigned_analyst,
+            "priority_score": self.priority_score or 0.0,
+            "sla_deadline": _iso(self.sla_deadline),
+            "sla_breached": self.sla_breached or False,
+            "sla_paused_at": _iso(self.sla_paused_at),
+            "duplicate_of": self.duplicate_of,
+            "requires_manual_review": self.requires_manual_review or False,
+            "manual_review_reason": self.manual_review_reason,
+            "locked_by": self.locked_by,
+            "locked_at": _iso(self.locked_at),
             "created_at": _iso(self.created_at),
             "updated_at": _iso(self.updated_at),
         }
@@ -118,9 +160,9 @@ class AuditLog(Base):
 
     id          = Column(Integer, primary_key=True, index=True)
     case_id     = Column(String(64), ForeignKey("dispute_cases.case_id"), index=True, nullable=False)
-    event_type  = Column(String(128), nullable=False)  # e.g. WORKFLOW_START, LLM_CALL, VALIDATION_FAIL
+    event_type  = Column(String(128), nullable=False)
     stage       = Column(String(64), nullable=True)
-    actor       = Column(String(64), default="system")   # system | agent | user
+    actor       = Column(String(64), default="system")
     payload     = Column(JSON, nullable=True)
     message     = Column(Text, nullable=True)
     created_at  = Column(DateTime, default=_utc_now, nullable=False)
@@ -166,5 +208,63 @@ class WorkflowState(Base):
             "execution_time_ms": self.execution_time_ms,
             "success": self.success,
             "error_message": self.error_message,
+            "created_at": _iso(self.created_at),
+        }
+
+
+# ── Case Notes ────────────────────────────────────────────────────────────────
+
+class CaseNote(Base):
+    """Analyst notes attached to a dispute case. Append-only."""
+    __tablename__ = "case_notes"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    case_id     = Column(String(64), ForeignKey("dispute_cases.case_id"), index=True, nullable=False)
+    analyst     = Column(String(128), nullable=False)
+    note        = Column(Text, nullable=False)
+    is_internal = Column(Boolean, default=True)   # False = visible to customer
+    created_at  = Column(DateTime, default=_utc_now, nullable=False)
+
+    dispute_case = relationship("DisputeCase", back_populates="case_notes")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "case_id": self.case_id,
+            "analyst": self.analyst,
+            "note": self.note,
+            "is_internal": self.is_internal,
+            "created_at": _iso(self.created_at),
+        }
+
+
+# ── Document Requests ─────────────────────────────────────────────────────────
+
+class DocumentRequest(Base):
+    """Formal request for additional documents from the customer."""
+    __tablename__ = "document_requests"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    case_id         = Column(String(64), ForeignKey("dispute_cases.case_id"), index=True, nullable=False)
+    requested_by    = Column(String(128), nullable=False)
+    document_type   = Column(String(256), nullable=False)   # e.g. "Bank Statement", "Police FIR"
+    description     = Column(Text, nullable=True)
+    due_date        = Column(DateTime, nullable=True)
+    fulfilled       = Column(Boolean, default=False)
+    fulfilled_at    = Column(DateTime, nullable=True)
+    created_at      = Column(DateTime, default=_utc_now, nullable=False)
+
+    dispute_case    = relationship("DisputeCase", back_populates="document_requests")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "case_id": self.case_id,
+            "requested_by": self.requested_by,
+            "document_type": self.document_type,
+            "description": self.description,
+            "due_date": _iso(self.due_date),
+            "fulfilled": self.fulfilled,
+            "fulfilled_at": _iso(self.fulfilled_at),
             "created_at": _iso(self.created_at),
         }

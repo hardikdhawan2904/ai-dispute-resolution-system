@@ -67,6 +67,14 @@ export interface DisputeSubmissionInput {
   fraud_selected: boolean;
 }
 
+export type QueueName =
+  | "FRAUD_OPS"
+  | "ATM_INVESTIGATION"
+  | "CHARGEBACK_TEAM"
+  | "COMPLIANCE_REVIEW"
+  | "HIGH_PRIORITY"
+  | "GENERAL";
+
 export interface DisputeCase {
   case_id: string;
   customer_id: string;
@@ -92,8 +100,86 @@ export interface DisputeCase {
   structured_reasoning?: string;
   status: CaseStatus;
   workflow_ready: boolean;
+  // Enterprise fields
+  assigned_queue?: QueueName;
+  assigned_analyst?: string;
+  priority_score: number;
+  sla_deadline?: string;
+  sla_breached: boolean;
+  sla_paused_at?: string;
+  duplicate_of?: string;
+  requires_manual_review: boolean;
+  manual_review_reason?: string;
+  locked_by?: string;
+  locked_at?: string;
   created_at: string;
   updated_at?: string;
+}
+
+export interface CaseNote {
+  id: number;
+  case_id: string;
+  analyst: string;
+  note: string;
+  is_internal: boolean;
+  created_at: string;
+}
+
+export interface DocumentRequest {
+  id: number;
+  case_id: string;
+  requested_by: string;
+  document_type: string;
+  description?: string;
+  due_date?: string;
+  fulfilled: boolean;
+  fulfilled_at?: string;
+  created_at: string;
+}
+
+export interface TimelineEntry {
+  id: string;
+  type: string;
+  label: string;
+  color: string;
+  icon: string;
+  actor: string;
+  actor_type: "system" | "analyst" | "customer";
+  message: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+  source: string;
+}
+
+export interface RiskIndicator {
+  tag: string;
+  explanation: string;
+}
+
+export interface QueueSummary {
+  queue: string;
+  display: string;
+  count: number;
+  critical: number;
+  sla_breached: number;
+}
+
+export interface OpsAnalytics {
+  total_cases: number;
+  open_cases: number;
+  fraud_cases: number;
+  critical_cases: number;
+  sla_breached_cases: number;
+  manual_review_cases: number;
+  resolved_cases: number;
+  resolution_rate: number;
+  new_cases_7d: number;
+  new_cases_30d: number;
+  avg_confidence_score: number;
+  by_queue: Record<string, number>;
+  by_status: Record<string, number>;
+  by_priority: Record<string, number>;
+  by_category: Record<string, number>;
 }
 
 export interface DisputeSubmissionResponse {

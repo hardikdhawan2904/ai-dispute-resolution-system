@@ -245,6 +245,18 @@ def _safe_case_dict(case: dict) -> dict:
         "structured_reasoning": case.get("structured_reasoning"),
         "status": case.get("status", "Dispute Raised"),
         "workflow_ready": case.get("workflow_ready", False),
+        # Enterprise fields
+        "assigned_queue": case.get("assigned_queue"),
+        "assigned_analyst": case.get("assigned_analyst"),
+        "priority_score": case.get("priority_score", 0.0),
+        "sla_deadline": case.get("sla_deadline"),
+        "sla_breached": case.get("sla_breached", False),
+        "sla_paused_at": case.get("sla_paused_at"),
+        "duplicate_of": case.get("duplicate_of"),
+        "requires_manual_review": case.get("requires_manual_review", False),
+        "manual_review_reason": case.get("manual_review_reason"),
+        "locked_by": case.get("locked_by"),
+        "locked_at": case.get("locked_at"),
         "created_at": case.get("created_at") or "",
         "updated_at": case.get("updated_at"),
     }

@@ -14,6 +14,7 @@ load_dotenv()
 
 from database.database import init_db
 from api.routes import disputes, health, auth, customer, dispute_tracking
+from api.routes import ops_cases, ops_analytics, queues
 from api.websocket_manager import ws_manager
 from utils.logger import api_logger
 
@@ -86,6 +87,9 @@ app.include_router(auth.router)
 app.include_router(disputes.router)
 app.include_router(dispute_tracking.router)
 app.include_router(customer.router)
+app.include_router(ops_cases.router)
+app.include_router(ops_analytics.router)
+app.include_router(queues.router)
 
 
 @app.websocket("/ws/disputes")

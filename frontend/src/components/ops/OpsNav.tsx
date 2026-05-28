@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Shield, LayoutDashboard, FileText, AlertTriangle,
-  Search, ClipboardCheck, BookOpen, GitBranch, BarChart2, LogOut, Monitor
+  Search, ClipboardCheck, BookOpen, GitBranch, BarChart2, LogOut, Monitor,
+  Layers,
 } from "lucide-react";
 import { getUser, clearAuth, ROLE_LABEL } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -13,12 +14,14 @@ const ALL_NAV = [
   { href: "/internal-review",    label: "Live Review",    icon: Monitor,          roles: ["FRAUD_ANALYST","DISPUTE_INVESTIGATOR","COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
   { href: "/ops/dashboard",      label: "Dashboard",      icon: LayoutDashboard,  roles: ["FRAUD_ANALYST","DISPUTE_INVESTIGATOR","COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
   { href: "/ops/disputes",       label: "Cases",          icon: FileText,         roles: ["FRAUD_ANALYST","DISPUTE_INVESTIGATOR","COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
+  { href: "/ops/queues",         label: "Queues",         icon: Layers,           roles: ["FRAUD_ANALYST","DISPUTE_INVESTIGATOR","COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
+  { href: "/ops/search",         label: "Search",         icon: Search,           roles: ["FRAUD_ANALYST","DISPUTE_INVESTIGATOR","COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
   { href: "/ops/fraud",          label: "Fraud",          icon: AlertTriangle,    roles: ["FRAUD_ANALYST","OPERATIONS_ADMIN"] },
-  { href: "/ops/investigations", label: "Investigations", icon: Search,           roles: ["DISPUTE_INVESTIGATOR","OPERATIONS_ADMIN"] },
+  { href: "/ops/investigations", label: "Investigations", icon: GitBranch,        roles: ["DISPUTE_INVESTIGATOR","OPERATIONS_ADMIN"] },
   { href: "/ops/compliance",     label: "Compliance",     icon: ClipboardCheck,   roles: ["COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
   { href: "/ops/audit",          label: "Audit Trail",    icon: BookOpen,         roles: ["COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
   { href: "/ops/workflows",      label: "Workflows",      icon: GitBranch,        roles: ["FRAUD_ANALYST","DISPUTE_INVESTIGATOR","COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
-  { href: "/ops/analysis",       label: "AI Analysis",   icon: BarChart2,        roles: ["FRAUD_ANALYST","DISPUTE_INVESTIGATOR","COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
+  { href: "/ops/analysis",       label: "Analytics",     icon: BarChart2,        roles: ["FRAUD_ANALYST","DISPUTE_INVESTIGATOR","COMPLIANCE_OFFICER","OPERATIONS_ADMIN"] },
 ];
 
 export default function OpsNav() {

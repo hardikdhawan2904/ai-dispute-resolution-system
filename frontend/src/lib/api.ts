@@ -7,6 +7,12 @@ import type {
   DisputeCase,
   AuditLog,
   WorkflowState,
+  CaseNote,
+  DocumentRequest,
+  TimelineEntry,
+  RiskIndicator,
+  QueueSummary,
+  OpsAnalytics,
 } from "@/types";
 import type { AuthUser } from "@/lib/auth";
 import { getToken } from "@/lib/auth";
@@ -157,5 +163,134 @@ export async function customerGetDispute(caseId: string): Promise<CustomerDisput
 
 export async function healthCheck(): Promise<{ status: string }> {
   const res = await api.get("/health");
+  return res.data;
+}
+
+// ── Ops — Case notes ──────────────────────────────────────────────────────────
+
+export async function getCaseNotes(caseId: string, includeInternal = true): Promise<CaseNote[]> {
+  const res = await api.get(`/api/ops/cases/${caseId}/notes`, { params: { include_internal: includeInternal } });
+  return res.data.notes;
+}
+
+export async function addCaseNote(caseId: string, analyst: string, note: string, isInternal = true): Promise<CaseNote> {
+  const res = await api.post<CaseNote>(`/api/ops/cases/${caseId}/notes`, { analyst, note, is_internal: isInternal });
+  return res.data;
+}
+
+// ── Ops — Document requests ───────────────────────────────────────────────────
+
+export async function getDocumentRequests(caseId: string): Promise<DocumentRequest[]> {
+  const res = await api.get(`/api/ops/cases/${caseId}/document-requests`);
+  return res.data.requests;
+}
+
+export async function createDocumentRequest(
+  caseId: string,
+  requestedBy: string,
+  documentType: string,
+  description?: string,
+  dueDate?: string,
+): Promise<DocumentRequest> {
+  const res = await api.post<DocumentRequest>(`/api/ops/cases/${caseId}/document-requests`, {
+    requested_by: requestedBy,
+    document_type: documentType,
+    description,
+    due_date: dueDate,
+  });
+  return res.data;
+}
+
+export async function fulfillDocumentRequest(requestId: number): Promise<DocumentRequest> {
+  const res = await api.post<DocumentRequest>(`/api/ops/cases/document-requests/${requestId}/fulfill`);
+  return res.data;
+}
+
+// ── Ops — Case lock ───────────────────────────────────────────────────────────
+
+export async function checkCaseLock(caseId: string): Promise<{ locked: boolean; locked_by?: string; expires_at?: string }> {
+  const res = await api.get(`/api/ops/cases/${caseId}/lock`);
+  return res.data;
+}
+
+export async function acquireCaseLock(caseId: string, analyst: string): Promise<{ acquired: boolean; locked_by?: string; expires_at?: string; error?: string }> {
+  const res = await api.post(`/api/ops/cases/${caseId}/lock`, { analyst });
+  return res.data;
+}
+
+export async function releaseCaseLock(caseId: string, analyst: string): Promise<{ released: boolean }> {
+  const res = await api.delete(`/api/ops/cases/${caseId}/lock`, { params: { analyst } });
+  return res.data;
+}
+
+// ── Ops — Analyst actions ─────────────────────────────────────────────────────
+
+export async function performAnalystAction(
+  caseId: string,
+  action: string,
+  analyst: string,
+  options?: { note?: string; new_assignee?: string; new_queue?: string },
+): Promise<DisputeCase> {
+  const res = await api.post<DisputeCase>(`/api/ops/cases/${caseId}/actions`, {
+    action,
+    analyst,
+    note: options?.note,
+    new_assignee: options?.new_assignee,
+    new_queue: options?.new_queue,
+  });
+  return res.data;
+}
+
+// ── Ops — Investigation timeline ──────────────────────────────────────────────
+
+export async function getCaseTimeline(caseId: string): Promise<TimelineEntry[]> {
+  const res = await api.get(`/api/ops/cases/${caseId}/timeline`);
+  return res.data.timeline;
+}
+
+// ── Ops — Risk explanation ────────────────────────────────────────────────────
+
+export async function getCaseRiskExplanation(caseId: string): Promise<{ risk_indicators: RiskIndicator[]; investigation_summary: string }> {
+  const res = await api.get(`/api/ops/cases/${caseId}/risk-explanation`);
+  return res.data;
+}
+
+// ── Ops — Advanced search ─────────────────────────────────────────────────────
+
+export async function searchCases(params: {
+  query?: string;
+  status?: string;
+  priority?: string;
+  category?: string;
+  queue?: string;
+  analyst?: string;
+  fraud_only?: boolean;
+  manual_review_only?: boolean;
+  sla_breached_only?: boolean;
+  min_amount?: number;
+  max_amount?: number;
+  skip?: number;
+  limit?: number;
+}): Promise<CasesListResponse> {
+  const res = await api.post<CasesListResponse>("/api/ops/cases/search", params);
+  return res.data;
+}
+
+// ── Ops — Analytics ───────────────────────────────────────────────────────────
+
+export async function getOpsAnalytics(): Promise<OpsAnalytics> {
+  const res = await api.get<OpsAnalytics>("/api/ops/analytics");
+  return res.data;
+}
+
+// ── Ops — Queues ──────────────────────────────────────────────────────────────
+
+export async function listQueues(): Promise<QueueSummary[]> {
+  const res = await api.get<{ queues: QueueSummary[] }>("/api/ops/queues");
+  return res.data.queues;
+}
+
+export async function getQueueCases(queueName: string, skip = 0, limit = 50): Promise<{ queue: string; display: string; total: number; cases: DisputeCase[] }> {
+  const res = await api.get(`/api/ops/queues/${queueName}/cases`, { params: { skip, limit } });
   return res.data;
 }

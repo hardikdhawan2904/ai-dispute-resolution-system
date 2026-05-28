@@ -42,10 +42,41 @@ class Base(DeclarativeBase):
 
 
 def init_db() -> None:
-    """Create all tables if they don't exist."""
+    """Create all tables if they don't exist, then apply additive migrations."""
     import database.models  # noqa: F401 — import triggers table registration
     Base.metadata.create_all(bind=engine)
+    _apply_migrations()
     db_logger.info("Database initialized — all tables created/verified.")
+
+
+def _apply_migrations() -> None:
+    """Additive ALTER TABLE migrations for existing SQLite databases."""
+    _new_cols = [
+        ("dispute_cases", "assigned_queue",         "VARCHAR(64)"),
+        ("dispute_cases", "assigned_analyst",        "VARCHAR(128)"),
+        ("dispute_cases", "priority_score",          "FLOAT DEFAULT 0.0"),
+        ("dispute_cases", "sla_deadline",            "DATETIME"),
+        ("dispute_cases", "sla_breached",            "BOOLEAN DEFAULT 0"),
+        ("dispute_cases", "sla_paused_at",           "DATETIME"),
+        ("dispute_cases", "duplicate_of",            "VARCHAR(64)"),
+        ("dispute_cases", "requires_manual_review",  "BOOLEAN DEFAULT 0"),
+        ("dispute_cases", "manual_review_reason",    "TEXT"),
+        ("dispute_cases", "locked_by",               "VARCHAR(128)"),
+        ("dispute_cases", "locked_at",               "DATETIME"),
+    ]
+    with engine.connect() as conn:
+        for table, col, col_type in _new_cols:
+            try:
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"
+                    )
+                )
+                conn.commit()
+                db_logger.info(f"Migration: added {table}.{col}")
+            except Exception:
+                # Column already exists — safe to ignore
+                conn.rollback()
 
 
 def get_db() -> Generator[Session, None, None]:

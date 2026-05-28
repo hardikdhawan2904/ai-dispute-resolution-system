@@ -12,6 +12,11 @@ from workflows.dispute_workflow import run_dispute_workflow
 from database.models import DisputeCase, AuditLog, WorkflowState
 from utils.logger import api_logger, audit_logger, log_workflow_event
 from utils.helpers import utc_now_iso
+from services.priority_engine import compute_priority
+from services.sla_service import compute_sla_deadline
+from services.queue_assignment_service import assign_queue
+from services.duplicate_detection_service import find_duplicate
+from services.manual_review_service import should_flag_manual_review
 
 
 class DisputeService:
@@ -55,8 +60,46 @@ class DisputeService:
                 "final_case": None,
             }
 
+        # Enterprise enrichment before persisting
+        priority_score, priority_label = compute_priority(final_case)
+        final_case["priority"] = priority_label
+        final_case["priority_score"] = priority_score
+
+        queue = assign_queue(final_case)
+        final_case["assigned_queue"] = queue
+
+        sla_deadline = compute_sla_deadline(priority_label)
+        final_case["sla_deadline"] = sla_deadline
+
+        manual_flag, manual_reason = should_flag_manual_review(final_case)
+        final_case["requires_manual_review"] = manual_flag
+        final_case["manual_review_reason"] = manual_reason if manual_flag else None
+
         # Persist the dispute case
         db_case = DisputeService._persist_case(final_case, db)
+
+        # Duplicate detection (post-persist so we exclude this case_id)
+        dup_of = find_duplicate(
+            db_case.customer_id, db_case.transaction_id,
+            db_case.amount, db_case.merchant or "", db,
+            exclude_case_id=db_case.case_id,
+        )
+        if dup_of:
+            db_case.duplicate_of = dup_of
+            DisputeService._append_audit_log(
+                db=db, case_id=db_case.case_id,
+                event_type="DUPLICATE_DETECTED", stage="post_analysis",
+                message=f"Possible duplicate of case {dup_of}",
+                payload={"duplicate_of": dup_of},
+            )
+
+        if manual_flag:
+            DisputeService._append_audit_log(
+                db=db, case_id=db_case.case_id,
+                event_type="MANUAL_REVIEW_FLAGGED", stage="post_analysis",
+                message=manual_reason,
+                payload={"reason": manual_reason},
+            )
 
         # Append audit log
         DisputeService._append_audit_log(
@@ -65,7 +108,12 @@ class DisputeService:
             event_type="CASE_CREATED",
             stage="structured_output",
             message=f"Dispute case created. Category: {db_case.dispute_category}, Priority: {db_case.priority}",
-            payload={"confidence_score": db_case.confidence_score, "risk_tags": db_case.risk_tags},
+            payload={
+                "confidence_score": db_case.confidence_score,
+                "risk_tags": db_case.risk_tags,
+                "assigned_queue": queue,
+                "priority_score": priority_score,
+            },
         )
 
         # Persist workflow state snapshots
@@ -222,6 +270,13 @@ class DisputeService:
             structured_reasoning=final_case.get("structured_reasoning", ""),
             status="Dispute Raised",
             workflow_ready=True,
+            # Enterprise fields
+            assigned_queue=final_case.get("assigned_queue"),
+            priority_score=final_case.get("priority_score", 0.0),
+            sla_deadline=final_case.get("sla_deadline"),
+            sla_breached=False,
+            requires_manual_review=final_case.get("requires_manual_review", False),
+            manual_review_reason=final_case.get("manual_review_reason"),
         )
         db.add(db_case)
         db.flush()  # Get PK without committing

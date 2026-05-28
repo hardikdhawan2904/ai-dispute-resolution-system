@@ -175,22 +175,66 @@ export default function OpsDisputesPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
-        <div className="relative flex-1">
+      <div className="bfsi-card p-4 mb-5 space-y-3">
+        {/* Search row */}
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bfsi-text-dim" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-            className="bfsi-input pl-9 text-sm" placeholder="Search by case ID, merchant, customer..." />
+            className="bfsi-input pl-9 text-sm w-full" placeholder="Search by case ID, merchant, customer ID…" />
         </div>
-        <div className="flex gap-2">
-          <select className="bfsi-select text-xs" value={filterPriority} onChange={(e) => setPriority(e.target.value)}>
-            <option value="">All Priorities</option>
-            {PRIORITIES.map((p) => <option key={p}>{p}</option>)}
-          </select>
-          <select className="bfsi-select text-xs" value={filterStatus} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All Statuses</option>
-            {STATUSES.map((s) => <option key={s}>{s}</option>)}
-          </select>
+
+        {/* Priority chips */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] text-bfsi-text-dim uppercase tracking-wider w-14 flex-shrink-0">Priority</span>
+          <button onClick={() => setPriority("")}
+            className={cn("text-xs px-3 py-1 rounded-full border transition-all",
+              filterPriority === "" ? "bg-bfsi-gold/20 border-bfsi-gold text-bfsi-gold font-semibold" : "border-bfsi-border text-bfsi-text-dim hover:border-bfsi-gold/40 hover:text-bfsi-text"
+            )}>All</button>
+          {[
+            { value: "CRITICAL", cls: "border-red-500/60 text-red-400 bg-red-500/20" },
+            { value: "HIGH",     cls: "border-orange-500/60 text-orange-400 bg-orange-500/20" },
+            { value: "MEDIUM",   cls: "border-yellow-500/60 text-yellow-400 bg-yellow-500/20" },
+            { value: "LOW",      cls: "border-green-500/60 text-green-400 bg-green-500/20" },
+          ].map(({ value, cls }) => (
+            <button key={value} onClick={() => setPriority(filterPriority === value ? "" : value)}
+              className={cn("text-xs px-3 py-1 rounded-full border transition-all font-medium",
+                filterPriority === value ? cls : "border-bfsi-border text-bfsi-text-dim hover:border-bfsi-gold/40 hover:text-bfsi-text"
+              )}>{value}</button>
+          ))}
         </div>
+
+        {/* Status/Stage chips */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] text-bfsi-text-dim uppercase tracking-wider w-14 flex-shrink-0">Stage</span>
+          <button onClick={() => setStatus("")}
+            className={cn("text-xs px-3 py-1 rounded-full border transition-all",
+              filterStatus === "" ? "bg-bfsi-gold/20 border-bfsi-gold text-bfsi-gold font-semibold" : "border-bfsi-border text-bfsi-text-dim hover:border-bfsi-gold/40 hover:text-bfsi-text"
+            )}>All</button>
+          {STATUSES.map((s) => (
+            <button key={s} onClick={() => setStatus(filterStatus === s ? "" : s)}
+              className={cn("text-xs px-3 py-1 rounded-full border transition-all",
+                filterStatus === s ? "bg-bfsi-gold/20 border-bfsi-gold text-bfsi-gold font-semibold" : "border-bfsi-border text-bfsi-text-dim hover:border-bfsi-gold/40 hover:text-bfsi-text"
+              )}>{s}</button>
+          ))}
+        </div>
+
+        {/* Active filter summary + clear */}
+        {(filterPriority || filterStatus) && (
+          <div className="flex items-center gap-2 pt-1 border-t border-bfsi-border">
+            <Filter className="w-3.5 h-3.5 text-bfsi-gold" />
+            <span className="text-xs text-bfsi-text-muted">
+              Filtering by:
+              {filterPriority && <span className="ml-1 font-semibold text-bfsi-text">{filterPriority}</span>}
+              {filterPriority && filterStatus && <span className="text-bfsi-text-dim"> · </span>}
+              {filterStatus && <span className="font-semibold text-bfsi-text">{filterStatus}</span>}
+              <span className="text-bfsi-text-dim ml-1">— {filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+            </span>
+            <button onClick={() => { setPriority(""); setStatus(""); }}
+              className="ml-auto text-xs text-bfsi-text-dim hover:text-bfsi-text flex items-center gap-1 transition-colors">
+              <X className="w-3 h-3" /> Clear filters
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Cases table */}
@@ -213,8 +257,9 @@ export default function OpsDisputesPage() {
                   <th className="text-left text-xs text-bfsi-text-dim font-medium px-4 py-3">Merchant</th>
                   <th className="text-right text-xs text-bfsi-text-dim font-medium px-4 py-3">Amount</th>
                   <th className="text-center text-xs text-bfsi-text-dim font-medium px-4 py-3">Priority</th>
-                  <th className="text-center text-xs text-bfsi-text-dim font-medium px-4 py-3">Status</th>
-                  <th className="text-center text-xs text-bfsi-text-dim font-medium px-4 py-3">AI Score</th>
+                  <th className="text-center text-xs text-bfsi-text-dim font-medium px-4 py-3">Stage</th>
+                  <th className="text-left text-xs text-bfsi-text-dim font-medium px-4 py-3 hidden lg:table-cell">Queue</th>
+                  <th className="text-center text-xs text-bfsi-text-dim font-medium px-4 py-3">Review Score</th>
                   <th className="text-center text-xs text-bfsi-text-dim font-medium px-4 py-3">Fraud</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -239,6 +284,11 @@ export default function OpsDisputesPage() {
                     <td className="px-4 py-3 text-center">
                       <span className={cn("text-[10px] px-2 py-0.5 rounded-full border", getStatusColor(c.status as any))}>
                         {c.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-left hidden lg:table-cell">
+                      <span className="text-[10px] text-bfsi-text-dim font-mono">
+                        {c.assigned_queue?.replace(/_/g, " ") || "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
