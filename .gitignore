@@ -1,0 +1,49 @@
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+.env.local
+.env.*.local
+
+# ── Python / Backend ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+*.log
+
+# ── Uploads / runtime data ────────────────────────────────────────────────────
+uploads/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ── TypeScript build cache ────────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+backend/.env

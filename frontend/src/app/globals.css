@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: #1e1e32;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-bfsi-black text-bfsi-text font-sans;
+    background-image: radial-gradient(ellipse at 20% 0%, rgba(245,158,11,0.04) 0%, transparent 60%),
+                      radial-gradient(ellipse at 80% 100%, rgba(59,130,246,0.04) 0%, transparent 60%);
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0d0d1a;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e1e32;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #f59e0b40;
+  }
+}
+
+@layer components {
+  /* BFSI Card */
+  .bfsi-card {
+    @apply bg-bfsi-card border border-bfsi-border rounded-lg;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.3);
+  }
+
+  /* Gold accent line */
+  .bfsi-card-accent {
+    @apply border-t-2 border-t-bfsi-gold;
+  }
+
+  /* Metric card */
+  .metric-card {
+    @apply bfsi-card p-6 relative overflow-hidden;
+  }
+
+  /* Priority badges */
+  .badge-critical {
+    @apply text-xs font-semibold px-2 py-0.5 rounded-full border
+           text-red-400 bg-red-400/10 border-red-400/30;
+  }
+  .badge-high {
+    @apply text-xs font-semibold px-2 py-0.5 rounded-full border
+           text-orange-400 bg-orange-400/10 border-orange-400/30;
+  }
+  .badge-medium {
+    @apply text-xs font-semibold px-2 py-0.5 rounded-full border
+           text-yellow-400 bg-yellow-400/10 border-yellow-400/30;
+  }
+  .badge-low {
+    @apply text-xs font-semibold px-2 py-0.5 rounded-full border
+           text-green-400 bg-green-400/10 border-green-400/30;
+  }
+
+  /* Form inputs */
+  .bfsi-input {
+    @apply w-full bg-bfsi-muted border border-bfsi-border rounded-md px-3 py-2
+           text-sm text-bfsi-text placeholder:text-bfsi-text-dim
+           focus:outline-none focus:ring-1 focus:ring-bfsi-gold focus:border-bfsi-gold
+           transition-all duration-200;
+  }
+  .bfsi-select {
+    @apply bfsi-input appearance-none cursor-pointer;
+  }
+  .bfsi-textarea {
+    @apply bfsi-input resize-none;
+  }
+
+  /* Gold button */
+  .btn-gold {
+    @apply bg-bfsi-gold text-bfsi-black font-semibold text-sm px-6 py-2.5 rounded-md
+           hover:bg-bfsi-gold-light transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus:outline-none focus:ring-2 focus:ring-bfsi-gold focus:ring-offset-2 focus:ring-offset-bfsi-black;
+  }
+
+  /* Ghost button */
+  .btn-ghost {
+    @apply bg-transparent border border-bfsi-border text-bfsi-text-muted text-sm px-4 py-2 rounded-md
+           hover:bg-bfsi-muted hover:text-bfsi-text transition-all duration-200;
+  }
+
+  /* Section header */
+  .section-header {
+    @apply text-xs font-semibold tracking-widest uppercase text-bfsi-text-dim mb-4;
+  }
+
+  /* Glowing divider */
+  .gold-divider {
+    @apply h-px bg-gradient-to-r from-transparent via-bfsi-gold/40 to-transparent my-6;
+  }
+
+  /* AI reasoning block */
+  .ai-reasoning {
+    @apply bg-bfsi-navy border border-bfsi-gold/20 rounded-lg p-4 text-sm
+           text-bfsi-text-muted leading-relaxed font-mono;
+  }
+}

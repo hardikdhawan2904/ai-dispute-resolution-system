@@ -1,0 +1,252 @@
+[
+  {
+    "label": "Unauthorized UPI Transaction — Fraud",
+    "input": {
+      "customer_name": "Priya Sharma",
+      "customer_id": "CUST-00123",
+      "email": "priya.sharma@gmail.com",
+      "phone": "+91-9876543210",
+      "transaction_id": "UPI20240315143200001",
+      "transaction_type": "UPI",
+      "merchant": "Unknown Merchant - Delhi",
+      "amount": 45000,
+      "currency": "INR",
+      "transaction_date": "2024-03-15",
+      "transaction_time": "14:32",
+      "customer_comment": "I received a call from someone claiming to be from my bank. They asked me to share my UPI PIN to verify my account. After sharing, I found 45000 rupees debited from my account which I did not authorise. I have never done any transaction with this merchant. Please help me immediately!",
+      "dispute_reason": "Unauthorized Transaction",
+      "fraud_selected": true
+    },
+    "expected_output": {
+      "dispute_category": "Unauthorized Transaction",
+      "fraud_suspicion": true,
+      "priority": "HIGH",
+      "risk_tags": ["POSSIBLE_FRAUD", "OTP_VERIFIED", "HIGH_VALUE_TRANSACTION"]
+    }
+  },
+  {
+    "label": "Duplicate Credit Card Charge",
+    "input": {
+      "customer_name": "Rajesh Kumar",
+      "customer_id": "CUST-00456",
+      "email": "rajesh.k@outlook.com",
+      "phone": "+91-9123456789",
+      "transaction_id": "CC20240318091500045",
+      "transaction_type": "Credit Card",
+      "merchant": "Amazon India",
+      "amount": 8999,
+      "currency": "INR",
+      "transaction_date": "2024-03-18",
+      "transaction_time": "09:15",
+      "customer_comment": "I made one purchase of Rs 8999 on Amazon but I can see the same amount has been charged twice on my credit card statement. Transaction IDs look similar. I only placed one order. Please refund the duplicate charge.",
+      "dispute_reason": "Duplicate Transaction",
+      "fraud_selected": false
+    },
+    "expected_output": {
+      "dispute_category": "Duplicate Transaction",
+      "fraud_suspicion": false,
+      "priority": "MEDIUM",
+      "risk_tags": ["DUPLICATE_PAYMENT", "CARD_NOT_PRESENT"]
+    }
+  },
+  {
+    "label": "ATM Cash Dispense Failure — High Value",
+    "input": {
+      "customer_name": "Meena Patel",
+      "customer_id": "CUST-00789",
+      "email": "meena.patel@yahoo.com",
+      "phone": "+91-9654321087",
+      "transaction_id": "ATM20240320151000078",
+      "transaction_type": "ATM",
+      "merchant": "HDFC ATM — MG Road Bangalore",
+      "amount": 20000,
+      "currency": "INR",
+      "transaction_date": "2024-03-20",
+      "transaction_time": "15:10",
+      "customer_comment": "I tried to withdraw 20000 rupees from the HDFC ATM on MG Road. The machine showed an error and the receipt says transaction failed but my account has been debited. The machine did not give me any cash. This is urgent as I needed that money for medical expenses.",
+      "dispute_reason": "ATM Cash Issue",
+      "fraud_selected": false
+    },
+    "expected_output": {
+      "dispute_category": "ATM Cash Issue",
+      "fraud_suspicion": false,
+      "priority": "HIGH",
+      "risk_tags": ["HIGH_VALUE_TRANSACTION", "HIGH_PRIORITY_CASE"]
+    }
+  },
+  {
+    "label": "International Transaction Fraud",
+    "input": {
+      "customer_name": "Arjun Mehta",
+      "customer_id": "CUST-00321",
+      "email": "arjun.mehta@gmail.com",
+      "phone": "+91-9988776655",
+      "transaction_id": "INTL20240322030000099",
+      "transaction_type": "International",
+      "merchant": "Unknown Merchant — Miami, USA",
+      "amount": 150000,
+      "currency": "INR",
+      "transaction_date": "2024-03-22",
+      "transaction_time": "03:00",
+      "customer_comment": "There is a transaction of about 1800 USD on my account from some merchant in Miami USA at 3am. I am in India and I never travel to USA. My card was in my pocket the whole time. I have no idea how this happened. I am very worried. Please block my card and refund immediately!!",
+      "dispute_reason": "Unauthorized Transaction",
+      "fraud_selected": true
+    },
+    "expected_output": {
+      "dispute_category": "Unauthorized Transaction",
+      "fraud_suspicion": true,
+      "priority": "CRITICAL",
+      "risk_tags": ["POSSIBLE_FRAUD", "INTERNATIONAL_TRANSACTION", "HIGH_VALUE_TRANSACTION", "SUSPICIOUS_BEHAVIOR", "CARD_NOT_PRESENT"]
+    }
+  },
+  {
+    "label": "Subscription Abuse — Streaming Service",
+    "input": {
+      "customer_name": "Sunita Reddy",
+      "customer_id": "CUST-00654",
+      "email": "sunita.r@gmail.com",
+      "phone": "+91-9765432109",
+      "transaction_id": "SUB20240310120000034",
+      "transaction_type": "Debit Card",
+      "merchant": "Netflix India",
+      "amount": 649,
+      "currency": "INR",
+      "transaction_date": "2024-03-10",
+      "transaction_time": "12:00",
+      "customer_comment": "I cancelled my Netflix subscription 2 months ago but they are still charging me every month. I have screenshots of the cancellation confirmation. This is the 3rd month they charged me after cancellation. Please help me stop this and get refund for all 3 months.",
+      "dispute_reason": "Subscription Abuse",
+      "fraud_selected": false
+    },
+    "expected_output": {
+      "dispute_category": "Subscription Abuse",
+      "fraud_suspicion": false,
+      "priority": "MEDIUM",
+      "risk_tags": ["RECURRING_DISPUTE"]
+    }
+  },
+  {
+    "label": "Refund Not Received — E-commerce",
+    "input": {
+      "customer_name": "Vikram Singh",
+      "customer_id": "CUST-00987",
+      "email": "vikram.singh@gmail.com",
+      "phone": "+91-9871234560",
+      "transaction_id": "OL20240301090000021",
+      "transaction_type": "Online Purchase",
+      "merchant": "Flipkart",
+      "amount": 12500,
+      "currency": "INR",
+      "transaction_date": "2024-03-01",
+      "transaction_time": "09:00",
+      "customer_comment": "I returned a laptop bag worth Rs 12500 to Flipkart on March 5th. They acknowledged the return and promised refund within 7-10 business days. It has been 25 days now and still no refund. Flipkart customer care says contact bank. Please help me get my money back.",
+      "dispute_reason": "Refund Not Received",
+      "fraud_selected": false
+    },
+    "expected_output": {
+      "dispute_category": "Refund Not Received",
+      "fraud_suspicion": false,
+      "priority": "MEDIUM",
+      "risk_tags": ["HIGH_VALUE_TRANSACTION", "CARD_NOT_PRESENT"]
+    }
+  },
+  {
+    "label": "Typo-filled Emotional Complaint — Possible Friendly Fraud",
+    "input": {
+      "customer_name": "Raman Das",
+      "customer_id": "CUST-01122",
+      "email": "raman.das@gmail.com",
+      "phone": "+91-9344556677",
+      "transaction_id": "CC20240319180000055",
+      "transaction_type": "Credit Card",
+      "merchant": "Zomato",
+      "amount": 2200,
+      "currency": "INR",
+      "transaction_date": "2024-03-19",
+      "transaction_time": "18:00",
+      "customer_comment": "i ordreed food frm zomato bt i dint recieve it!! the delivry boy said delivered bt nothng came!!! i want refund this is cheating i always pay on time plz help me i callrd zomato 10 times no help. my monye shud come bk",
+      "dispute_reason": "Product Not Received",
+      "fraud_selected": false
+    },
+    "expected_output": {
+      "dispute_category": "Product Not Received",
+      "fraud_suspicion": false,
+      "priority": "LOW",
+      "risk_tags": ["FRIENDLY_FRAUD_RISK"]
+    }
+  },
+  {
+    "label": "Net Banking Fraud — Account Takeover",
+    "input": {
+      "customer_name": "Kavitha Nair",
+      "customer_id": "CUST-01455",
+      "email": "kavitha.nair@gmail.com",
+      "phone": "+91-9444333222",
+      "transaction_id": "NB20240323020000077",
+      "transaction_type": "Net Banking",
+      "merchant": "External Transfer — Unknown Account",
+      "amount": 250000,
+      "currency": "INR",
+      "transaction_date": "2024-03-23",
+      "transaction_time": "02:15",
+      "customer_comment": "I found this morning that Rs 2.5 lakh was transferred from my account at 2:15 AM last night to some unknown account. I was sleeping and never initiated this transfer. My phone also received OTP messages but I did not share with anyone. I think my login credentials were stolen. This is a huge amount please freeze my account and investigate immediately.",
+      "dispute_reason": "Unauthorized Transaction",
+      "fraud_selected": true
+    },
+    "expected_output": {
+      "dispute_category": "Unauthorized Transaction",
+      "fraud_suspicion": true,
+      "priority": "CRITICAL",
+      "risk_tags": ["POSSIBLE_FRAUD", "HIGH_VALUE_TRANSACTION", "SUSPICIOUS_BEHAVIOR", "DEVICE_MISMATCH", "HIGH_PRIORITY_CASE"]
+    }
+  },
+  {
+    "label": "POS Terminal Overcharge",
+    "input": {
+      "customer_name": "Deepak Joshi",
+      "customer_id": "CUST-01788",
+      "email": "deepak.joshi@gmail.com",
+      "phone": "+91-9211122334",
+      "transaction_id": "POS20240317130000066",
+      "transaction_type": "POS",
+      "merchant": "Lifestyle Retail Store",
+      "amount": 5500,
+      "currency": "INR",
+      "transaction_date": "2024-03-17",
+      "transaction_time": "13:00",
+      "customer_comment": "I purchased clothes worth Rs 4200 at Lifestyle store but the POS machine charged me Rs 5500. I have the receipt showing 4200 but my bank shows 5500 debited. I spoke to the store manager but they are not helping. Please resolve this overcharge.",
+      "dispute_reason": "Merchant Dispute",
+      "fraud_selected": false
+    },
+    "expected_output": {
+      "dispute_category": "Merchant Dispute",
+      "fraud_suspicion": false,
+      "priority": "LOW",
+      "risk_tags": []
+    }
+  },
+  {
+    "label": "Wallet Transaction — Unknown Charge",
+    "input": {
+      "customer_name": "Ananya Krishnan",
+      "customer_id": "CUST-02011",
+      "email": "ananya.k@gmail.com",
+      "phone": "+91-9555666777",
+      "transaction_id": "WLT20240321110000088",
+      "transaction_type": "Wallet",
+      "merchant": "Paytm Merchant Store",
+      "amount": 3750,
+      "currency": "INR",
+      "transaction_date": "2024-03-21",
+      "transaction_time": "11:00",
+      "customer_comment": "A transaction of 3750 was made from my Paytm wallet linked to my bank account to some store I have never visited or heard of. I live in Mumbai and this merchant appears to be in Hyderabad. I did not do this transaction. Please investigate.",
+      "dispute_reason": "Unauthorized Transaction",
+      "fraud_selected": true
+    },
+    "expected_output": {
+      "dispute_category": "Unauthorized Transaction",
+      "fraud_suspicion": true,
+      "priority": "HIGH",
+      "risk_tags": ["POSSIBLE_FRAUD", "SUSPICIOUS_BEHAVIOR"]
+    }
+  }
+]
