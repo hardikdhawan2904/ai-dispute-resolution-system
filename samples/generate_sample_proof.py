@@ -83,7 +83,7 @@ draw.rectangle([0, H - 52, W, H], fill="#1a1a1a")
 draw.text((W // 2 - 20, H - 36), "◀   ●   ■", font=font(14), fill="#555555")
 
 # ── Save ───────────────────────────────────────────────────────────────────────
-out = os.path.join(os.path.dirname(__file__), "sample_bank_sms.png")
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample_bank_sms.png")
 img.save(out)
 print(f"Saved: {out}")
 print()
