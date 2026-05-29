@@ -25,7 +25,7 @@ from utils.logger import api_logger
 
 router = APIRouter(prefix="/api/disputes", tags=["Disputes"])
 
-_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".xlsx", ".xls"}
+_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".xlsx", ".csv"}
 _MAX_FILE_BYTES     = 10 * 1024 * 1024          # 10 MB
 _UPLOAD_ROOT        = Path("uploads")
 
@@ -174,10 +174,12 @@ async def upload_case_documents(
     """
     Public endpoint — customers upload supporting documents after submitting a dispute.
     Accepts PDF, JPG, PNG, XLSX (max 10 MB per file).
-    Images (JPG/PNG) are automatically analyzed by vision AI and findings are logged.
+    After saving all files, text is extracted from each (OCR for images, pdfplumber for PDF,
+    openpyxl for XLSX) and fed into a single unified dispute analysis call.
     """
     from database.models import DisputeCase, AuditLog
-    from agents.image_agent import run_image_agent
+    from agents.dispute_agent import run_dispute_agent
+    from utils.extractor import extract_text
 
     case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
     if not case:
@@ -187,8 +189,8 @@ async def upload_case_documents(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     saved: List[str] = []
-    case_details = case.to_dict()
 
+    # ── Save all files first ──────────────────────────────────────────────
     for upload in files:
         ext = Path(upload.filename or "").suffix.lower()
         if ext not in _ALLOWED_EXTENSIONS:
@@ -203,64 +205,71 @@ async def upload_case_documents(
                 detail=f"'{upload.filename}' exceeds the 10 MB file size limit",
             )
         safe_name = Path(upload.filename).name
-        save_path = upload_dir / safe_name
-        save_path.write_bytes(content)
+        (upload_dir / safe_name).write_bytes(content)
         saved.append(safe_name)
 
-        # ── AI analysis by file type ──────────────────────────────────────
-        if ext in {".jpg", ".jpeg", ".png"}:
-            findings = run_image_agent(str(save_path), case_details)
-            findings_key = "image_findings"
-            event_type = "IMAGE_ANALYSED"
-        elif ext in {".pdf", ".xlsx", ".xls"}:
-            from agents.document_agent import run_document_agent
-            findings = run_document_agent(str(save_path), case_details)
-            findings_key = "document_findings"
-            event_type = "DOCUMENT_ANALYSED"
-        else:
-            findings = None
-            findings_key = None
-            event_type = None
+    if not saved:
+        return {"case_id": case_id, "uploaded": [], "count": 0}
 
-        if findings and findings_key:
-            adjustment = float(findings.get("confidence_adjustment", 0.0))
-            if adjustment != 0.0:
-                old_score = case.confidence_score or 0.0
-                case.confidence_score = max(0.0, min(1.0, old_score + adjustment))
+    # ── Extract text from every uploaded file ─────────────────────────────
+    document_texts = []
+    for name in saved:
+        text = extract_text(str(upload_dir / name))
+        if text.strip():
+            document_texts.append(f"[{name}]\n{text}")
 
-            meta = case.transaction_metadata or {}
-            file_findings = meta.get(findings_key, [])
-            file_findings.append({"file": safe_name, **findings})
-            meta[findings_key] = file_findings
-            case.transaction_metadata = meta
+    # ── Unified analysis: form data + all extracted document texts ────────
+    dispute_input = {
+        "case_id":             case_id,
+        "customer_id":         case.customer_id,
+        "customer_name":       case.customer_name,
+        "email":               case.email or "",
+        "phone":               case.phone or "",
+        "transaction_id":      case.transaction_id or "",
+        "transaction_type":    case.transaction_type or "",
+        "merchant":            case.merchant or "",
+        "amount":              case.amount or 0,
+        "currency":            case.currency or "INR",
+        "transaction_date":    case.transaction_date or "",
+        "transaction_time":    case.transaction_time or "",
+        "dispute_reason":      case.dispute_reason or "",
+        "fraud_selected":      case.fraud_suspicion or False,
+        "customer_comment":    case.customer_comment or "",
+        "transaction_metadata": case.transaction_metadata or {},
+    }
 
-            db.add(AuditLog(
-                case_id=case_id,
-                event_type=event_type,
-                actor="ai_vision",
-                message=findings.get("summary", "Document analyzed"),
-                payload={
-                    "file": safe_name,
-                    "document_type": findings.get("document_type"),
-                    "matches_case": findings.get("matches_case"),
-                    "mismatches": findings.get("mismatches", []),
-                    "fraud_indicators": findings.get("fraud_indicators", []),
-                    "confidence_adjustment": adjustment,
-                    "new_confidence_score": case.confidence_score,
-                },
-            ))
-            api_logger.info(f"File analysed for {case_id}: {safe_name}, adjustment={adjustment:+.2f}")
+    result = run_dispute_agent(dispute_input, document_texts=document_texts)
 
-    if saved:
-        db.add(AuditLog(
-            case_id=case_id,
-            event_type="DOCUMENT_UPLOADED",
-            actor="customer",
-            message=f"Customer uploaded {len(saved)} document(s): {', '.join(saved)}",
-            payload={"files": saved, "count": len(saved)},
-        ))
-        db.commit()
-        api_logger.info(f"Documents uploaded for {case_id}: {saved}")
+    # ── Persist updated analysis ──────────────────────────────────────────
+    case.dispute_category        = result.get("dispute_category", case.dispute_category)
+    case.fraud_suspicion         = result.get("fraud_suspicion", case.fraud_suspicion)
+    case.customer_intent_summary = result.get("customer_intent_summary", case.customer_intent_summary)
+    case.confidence_score        = result.get("confidence_score", case.confidence_score)
+    case.risk_tags               = result.get("risk_tags", case.risk_tags)
+    case.structured_reasoning    = result.get("structured_reasoning", case.structured_reasoning)
+
+    db.add(AuditLog(
+        case_id=case_id,
+        event_type="DOCUMENT_UPLOADED",
+        actor="customer",
+        message=f"Customer uploaded {len(saved)} document(s): {', '.join(saved)}",
+        payload={"files": saved, "count": len(saved)},
+    ))
+    db.add(AuditLog(
+        case_id=case_id,
+        event_type="REANALYSED",
+        actor="system",
+        message=f"Unified analysis complete with {len(document_texts)} document(s). Confidence: {case.confidence_score:.0%}",
+        payload={
+            "files": saved,
+            "documents_with_text": len(document_texts),
+            "confidence_score": case.confidence_score,
+            "dispute_category": case.dispute_category,
+        },
+    ))
+
+    db.commit()
+    api_logger.info(f"Unified analysis complete for {case_id}: {len(document_texts)} docs extracted")
 
     return {"case_id": case_id, "uploaded": saved, "count": len(saved)}
 

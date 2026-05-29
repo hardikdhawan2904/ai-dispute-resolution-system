@@ -214,24 +214,14 @@ def list_uploads(case_id: str, db: Session = Depends(get_db)):
     if not case_dir.exists():
         return {"case_id": case_id, "files": []}
 
-    # Build index of all findings (image + document) keyed by filename
-    meta = case.transaction_metadata or {}
-    findings_by_file = {}
-    for f in meta.get("image_findings", []):
-        findings_by_file[f["file"]] = f
-    for f in meta.get("document_findings", []):
-        findings_by_file[f["file"]] = f
-
     files = []
     for f in sorted(case_dir.iterdir()):
         if not f.is_file():
             continue
-        ext = f.suffix.lower()
         files.append({
             "name": f.name,
             "url": f"/uploads/{case_id}/{f.name}",
-            "is_image": ext in _IMAGE_EXTS,
-            "analysis": findings_by_file.get(f.name),
+            "is_image": f.suffix.lower() in _IMAGE_EXTS,
         })
 
     return {"case_id": case_id, "files": files}
@@ -239,8 +229,9 @@ def list_uploads(case_id: str, db: Session = Depends(get_db)):
 
 @router.post("/{case_id}/uploads/analyse")
 def analyse_uploads(case_id: str, db: Session = Depends(get_db)):
-    """Run (or re-run) vision AI analysis on all images uploaded for a case."""
-    from agents.image_agent import run_image_agent
+    """Re-run unified analysis on all uploaded files for a case."""
+    from agents.dispute_agent import run_dispute_agent
+    from utils.extractor import extract_text
 
     case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
     if not case:
@@ -250,70 +241,57 @@ def analyse_uploads(case_id: str, db: Session = Depends(get_db)):
     if not case_dir.exists():
         return {"case_id": case_id, "analysed": 0, "files": []}
 
-    from agents.document_agent import run_document_agent
-
-    _DOC_EXTS = {".pdf", ".xlsx", ".xls"}
-
-    case_details = case.to_dict()
-    meta = case.transaction_metadata or {}
-
-    # Rebuild findings index from both buckets
-    findings_by_file: dict = {}
-    for f in meta.get("image_findings", []):
-        findings_by_file[f["file"]] = ("image_findings", f)
-    for f in meta.get("document_findings", []):
-        findings_by_file[f["file"]] = ("document_findings", f)
-
+    # ── Extract text from every file in the case directory ────────────────
+    _ANALYSABLE = _IMAGE_EXTS | {".pdf", ".xlsx", ".csv"}
+    document_texts = []
     analysed = 0
     for file_path in sorted(case_dir.iterdir()):
-        if not file_path.is_file():
+        if not file_path.is_file() or file_path.suffix.lower() not in _ANALYSABLE:
             continue
-        ext = file_path.suffix.lower()
+        text = extract_text(str(file_path))
+        if text.strip():
+            document_texts.append(f"[{file_path.name}]\n{text}")
+            analysed += 1
 
-        if ext in _IMAGE_EXTS:
-            findings = run_image_agent(str(file_path), case_details)
-            findings_key = "image_findings"
-            event_type = "IMAGE_ANALYSED"
-        elif ext in _DOC_EXTS:
-            findings = run_document_agent(str(file_path), case_details)
-            findings_key = "document_findings"
-            event_type = "DOCUMENT_ANALYSED"
-        else:
-            continue
+    # ── Unified analysis: form data + all extracted texts ─────────────────
+    dispute_input = {
+        "case_id":             case_id,
+        "customer_id":         case.customer_id,
+        "customer_name":       case.customer_name,
+        "email":               case.email or "",
+        "phone":               case.phone or "",
+        "transaction_id":      case.transaction_id or "",
+        "transaction_type":    case.transaction_type or "",
+        "merchant":            case.merchant or "",
+        "amount":              case.amount or 0,
+        "currency":            case.currency or "INR",
+        "transaction_date":    case.transaction_date or "",
+        "transaction_time":    case.transaction_time or "",
+        "dispute_reason":      case.dispute_reason or "",
+        "fraud_selected":      case.fraud_suspicion or False,
+        "customer_comment":    case.customer_comment or "",
+        "transaction_metadata": case.transaction_metadata or {},
+    }
 
-        if not findings:
-            continue
+    result = run_dispute_agent(dispute_input, document_texts=document_texts)
 
-        findings["file"] = file_path.name
-        findings_by_file[file_path.name] = (findings_key, findings)
+    case.dispute_category        = result.get("dispute_category", case.dispute_category)
+    case.fraud_suspicion         = result.get("fraud_suspicion", case.fraud_suspicion)
+    case.customer_intent_summary = result.get("customer_intent_summary", case.customer_intent_summary)
+    case.confidence_score        = result.get("confidence_score", case.confidence_score)
+    case.risk_tags               = result.get("risk_tags", case.risk_tags)
+    case.structured_reasoning    = result.get("structured_reasoning", case.structured_reasoning)
 
-        adjustment = float(findings.get("confidence_adjustment", 0.0))
-        if adjustment != 0.0:
-            case.confidence_score = max(0.0, min(1.0, (case.confidence_score or 0.0) + adjustment))
-
-        db.add(AuditLog(
-            case_id=case_id,
-            event_type=event_type,
-            actor="ai_vision",
-            message=findings.get("summary", "File analysed"),
-            payload={
-                "file": file_path.name,
-                "document_type": findings.get("document_type"),
-                "matches_case": findings.get("matches_case"),
-                "mismatches": findings.get("mismatches", []),
-                "confidence_adjustment": adjustment,
-            },
-        ))
-        analysed += 1
-
-    # Write back separated buckets
-    meta["image_findings"]    = [f for key, f in findings_by_file.values() if key == "image_findings"]
-    meta["document_findings"] = [f for key, f in findings_by_file.values() if key == "document_findings"]
-    case.transaction_metadata = meta
+    db.add(AuditLog(
+        case_id=case_id,
+        event_type="REANALYSED",
+        actor="system",
+        message=f"Unified re-analysis with {len(document_texts)} document(s). Confidence: {case.confidence_score:.0%}",
+        payload={"documents_extracted": len(document_texts), "confidence_score": case.confidence_score},
+    ))
     db.commit()
     db.refresh(case)
 
-    # Return updated file list
     files = []
     for f in sorted(case_dir.iterdir()):
         if f.is_file():
@@ -321,7 +299,6 @@ def analyse_uploads(case_id: str, db: Session = Depends(get_db)):
                 "name": f.name,
                 "url": f"/uploads/{case_id}/{f.name}",
                 "is_image": f.suffix.lower() in _IMAGE_EXTS,
-                "analysis": findings_by_file.get(f.name),
             })
 
     return {"case_id": case_id, "analysed": analysed, "files": files}

@@ -268,17 +268,6 @@ export interface CaseUploadFile {
   name: string;
   url: string;
   is_image: boolean;
-  analysis?: {
-    document_type?: string;
-    extracted_amount?: number | null;
-    extracted_merchant?: string | null;
-    extracted_date?: string | null;
-    matches_case?: boolean;
-    mismatches?: string[];
-    fraud_indicators?: string[];
-    confidence_adjustment?: number;
-    summary?: string;
-  } | null;
 }
 
 export async function getCaseUploads(caseId: string): Promise<CaseUploadFile[]> {

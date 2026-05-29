@@ -1,9 +1,10 @@
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, List
 
 
 class DisputeAgentState(TypedDict):
     # ── Input ───────────────────────────────────────────────────────────────────
     dispute_input: dict
+    document_texts: List[str]   # extracted text from each uploaded file
 
     # ── Derived in validate_input ───────────────────────────────────────────────
     case_id: str

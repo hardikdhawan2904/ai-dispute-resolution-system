@@ -32,7 +32,7 @@ function FileIcon({ name }: { name: string }) {
   if (ext === "pdf") return <FileText className="w-4 h-4 text-red-500" />;
   if (ext === "jpg" || ext === "jpeg" || ext === "png")
     return <Image className="w-4 h-4 text-blue-500" />;
-  if (ext === "xlsx" || ext === "xls")
+  if (ext === "xlsx" || ext === "csv")
     return <FileSpreadsheet className="w-4 h-4 text-green-600" />;
   return <File className="w-4 h-4 text-slate-400" />;
 }
@@ -98,13 +98,13 @@ export default function Step5({ files, onAdd, onRemove, suggestions, error }: St
             Drag &amp; drop files, or click to browse
           </p>
           <p className="text-xs text-slate-400">
-            PDF, JPG, PNG, XLSX — Maximum 10 MB per file
+            PDF, JPG, PNG, XLSX, CSV — Maximum 10 MB per file
           </p>
           <input
             ref={inputRef}
             type="file"
             multiple
-            accept=".pdf,.jpg,.jpeg,.png,.xlsx"
+            accept=".pdf,.jpg,.jpeg,.png,.xlsx,.csv"
             className="hidden"
             onChange={(e) => handleFiles(e.target.files)}
           />

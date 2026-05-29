@@ -37,6 +37,13 @@ def run_llm(state: DisputeAgentState) -> dict:
     d = state["dispute_input"]
     case_id = state["case_id"]
 
+    doc_texts = state.get("document_texts") or []
+    if doc_texts:
+        parts = [f"Document {i+1}:\n{t}" for i, t in enumerate(doc_texts) if t.strip()]
+        document_section = "\n\n".join(parts) if parts else "  No documents attached."
+    else:
+        document_section = "  No documents attached."
+
     prompt_text = DISPUTE_ANALYSIS_PROMPT.format(
         customer_name=d.get("customer_name", "Unknown"),
         customer_id=d.get("customer_id", ""),
@@ -50,6 +57,7 @@ def run_llm(state: DisputeAgentState) -> dict:
         fraud_selected=d.get("fraud_selected", False),
         customer_comment=d.get("customer_comment", ""),
         supporting_evidence=state["supporting_evidence"],
+        document_section=document_section,
         case_id=case_id,
         created_at=utc_now_iso(),
     )

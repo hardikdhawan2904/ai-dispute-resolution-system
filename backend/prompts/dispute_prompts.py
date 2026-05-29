@@ -44,6 +44,8 @@ DISPUTE INFORMATION:
 
 SUPPORTING EVIDENCE:
 {supporting_evidence}
+ATTACHED DOCUMENTS:
+{document_section}
 ===================================
 ANALYSIS INSTRUCTIONS:
 
