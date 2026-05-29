@@ -70,6 +70,30 @@ class DisputeUnderstandingAgent:
             customer_id=dispute_input.get("customer_id"),
         )
 
+        # Build supporting evidence block from metadata + top-level fields
+        meta = dispute_input.get("transaction_metadata") or {}
+        def _yn(val) -> str:
+            if val is True:  return "Yes"
+            if val is False: return "No"
+            return str(val) if val else "Not provided"
+
+        supporting_evidence = (
+            f"  OTP Received (for this txn)  : {_yn(meta.get('otp_received'))}\n"
+            f"  Card / Account Blocked       : {_yn(meta.get('card_blocked'))}\n"
+            f"  Bank Already Contacted       : {_yn(meta.get('bank_contacted'))}\n"
+            f"  Transaction Location         : {meta.get('transaction_location') or 'Not provided'}\n"
+            f"  OTP Shared with 3rd Party    : {_yn(meta.get('otp_shared'))}\n"
+            f"  Bank Impersonation Call      : {_yn(meta.get('bank_impersonation'))}\n"
+            f"  Remote Access App Installed  : {_yn(meta.get('remote_access'))}\n"
+            f"  Phishing Link Clicked        : {_yn(meta.get('phishing_link'))}\n"
+            f"  SIM Swap Suspected           : {_yn(meta.get('sim_swap_suspected'))}\n"
+            f"  Device Lost / Stolen         : {_yn(meta.get('device_lost'))}\n"
+            f"  Card Lost / Stolen           : {_yn(meta.get('card_lost'))}\n"
+            f"  Unknown Beneficiary Added    : {_yn(meta.get('unknown_beneficiary'))}\n"
+            f"  UPI Collect Fraud            : {_yn(meta.get('upi_collect_fraud'))}\n"
+            f"  Steps Already Taken          : {meta.get('fraud_additional_details') or 'None stated'}\n"
+        )
+
         # Build the analysis prompt
         prompt_text = DISPUTE_ANALYSIS_PROMPT.format(
             customer_name=dispute_input.get("customer_name", "Unknown"),
@@ -86,6 +110,7 @@ class DisputeUnderstandingAgent:
             dispute_reason=dispute_input.get("dispute_reason", ""),
             fraud_selected=dispute_input.get("fraud_selected", False),
             customer_comment=dispute_input.get("customer_comment", ""),
+            supporting_evidence=supporting_evidence,
             case_id=case_id,
             created_at=utc_now_iso(),
         )

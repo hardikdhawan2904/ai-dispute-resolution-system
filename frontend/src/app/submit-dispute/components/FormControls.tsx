@@ -285,21 +285,8 @@ export function FMaskedDigits({
         {required && <span className="text-red-500 ml-0.5">*</span>}
       </label>
       <div className="flex items-center gap-2">
-        {/* Three dots */}
-        <div className="flex items-center gap-1 px-3 py-2.5 bg-gray-100 border border-gray-200 rounded-lg">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="w-2 h-2 rounded-full bg-gray-400" />
-          ))}
-          <div className="w-2 h-2 rounded-full bg-gray-400 ml-0.5" />
-          <div className="w-2 h-2 rounded-full bg-gray-400 ml-0.5" />
-          <div className="w-2 h-2 rounded-full bg-gray-400 ml-0.5" />
-          <div className="w-2 h-2 rounded-full bg-gray-400 ml-0.5" />
-          <div className="w-2 h-2 rounded-full bg-gray-400 ml-0.5" />
-          <div className="w-2 h-2 rounded-full bg-gray-400 ml-0.5" />
-          <div className="w-2 h-2 rounded-full bg-gray-400 ml-0.5" />
-        </div>
-        <span className="text-gray-400 text-sm">—</span>
-        {/* 4 digit inputs */}
+        <span className="text-gray-400 font-mono text-sm tracking-widest select-none">●●●●</span>
+        <span className="text-gray-300 text-sm">—</span>
         {[0, 1, 2, 3].map((idx) => (
           <input
             key={idx}
@@ -310,7 +297,7 @@ export function FMaskedDigits({
             value={digits[idx].trim()}
             onChange={(e) => handleChange(idx, e.target.value)}
             onKeyDown={(e) => handleKeyDown(idx, e)}
-            className={`w-10 h-10 text-center text-sm font-mono font-semibold border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
+            className={`w-9 h-9 text-center text-sm font-mono font-semibold border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
               error
                 ? "border-red-400 bg-red-50/50 focus:ring-red-500/20"
                 : "border-gray-200 bg-white focus:ring-blue-500/20 focus:border-blue-500"

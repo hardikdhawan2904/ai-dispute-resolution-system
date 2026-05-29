@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from database.database import get_db
-from database.models import DisputeCase
+from database.models import DisputeCase, AuditLog, WorkflowState, CaseNote, DocumentRequest
 from schemas.ops_schemas import (
     AddNoteRequest,
     CreateDocumentRequestBody,
@@ -27,6 +27,8 @@ from services import (
     risk_explanation_service,
     case_search_service,
 )
+from services import priority_engine, manual_review_service
+from agents.dispute_understanding_agent import DisputeUnderstandingAgent
 
 router = APIRouter(prefix="/api/ops/cases", tags=["Ops — Cases"])
 
@@ -138,7 +140,77 @@ def get_risk_explanation(case_id: str, db: Session = Depends(get_db)):
     }
 
 
+# ── Re-analyse ───────────────────────────────────────────────────────────────
+
+@router.post("/{case_id}/reanalyse")
+def reanalyse_case(case_id: str, db: Session = Depends(get_db)):
+    case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    dispute_input = {
+        "case_id":          case.case_id,
+        "customer_name":    case.customer_name,
+        "customer_id":      case.customer_id,
+        "email":            case.email or "",
+        "phone":            case.phone or "",
+        "transaction_id":   case.transaction_id,
+        "transaction_type": case.transaction_type,
+        "merchant":         case.merchant,
+        "amount":           case.amount,
+        "currency":         case.currency,
+        "transaction_date": case.transaction_date or "",
+        "transaction_time": case.transaction_time or "",
+        "dispute_reason":   case.dispute_reason or "",
+        "fraud_selected":   case.fraud_suspicion,
+        "customer_comment": case.customer_comment or "",
+        "transaction_metadata": {},
+    }
+
+    agent = DisputeUnderstandingAgent()
+    result = agent.analyze_dispute(dispute_input)
+
+    case.dispute_category        = result.get("dispute_category", case.dispute_category)
+    case.fraud_suspicion         = result.get("fraud_suspicion", case.fraud_suspicion)
+    case.customer_intent_summary = result.get("customer_intent_summary", case.customer_intent_summary)
+    case.confidence_score        = result.get("confidence_score", case.confidence_score)
+    case.risk_tags               = result.get("risk_tags", case.risk_tags)
+    case.structured_reasoning    = result.get("structured_reasoning", case.structured_reasoning)
+
+    priority_score, priority_label = priority_engine.compute_priority(case.to_dict())
+    case.priority_score = priority_score
+    case.priority       = priority_label
+
+    flag, reason = manual_review_service.should_flag_manual_review(case.to_dict())
+    case.requires_manual_review = flag
+    case.manual_review_reason   = reason if flag else None
+
+    log = AuditLog(
+        case_id=case_id,
+        event_type="REANALYSED",
+        stage="structured_output",
+        actor="system",
+        message=f"Case re-analysed. New confidence: {case.confidence_score:.0%}, Priority: {case.priority}",
+        payload={"confidence_score": case.confidence_score, "priority": case.priority},
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(case)
+    return case.to_dict()
+
+
 # ── Advanced search ───────────────────────────────────────────────────────────
+
+@router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_case(case_id: str, db: Session = Depends(get_db)):
+    case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    for model in [AuditLog, WorkflowState, CaseNote, DocumentRequest]:
+        db.query(model).filter(model.case_id == case_id).delete(synchronize_session=False)
+    db.delete(case)
+    db.commit()
+
 
 @router.post("/search")
 def search_cases(body: CaseSearchRequest, db: Session = Depends(get_db)):

@@ -18,6 +18,7 @@ import {
   acquireCaseLock, releaseCaseLock, checkCaseLock,
   performAnalystAction,
   getCaseTimeline, getCaseRiskExplanation,
+  reanalyseCase,
 } from "@/lib/api";
 import type { DisputeCase, AuditLog, WorkflowState, CaseNote, DocumentRequest, TimelineEntry, RiskIndicator } from "@/types";
 import RiskTags from "@/components/dispute/RiskTags";
@@ -107,6 +108,24 @@ export default function OpsCaseDetail() {
 
   // Analyst action
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Re-analyse
+  const [reanalysing, setReanalysing] = useState(false);
+
+  async function handleReanalyse() {
+    if (!caseData || reanalysing) return;
+    setReanalysing(true);
+    try {
+      const updated = await reanalyseCase(caseData.case_id);
+      setCaseData(updated);
+      toast.success(`Re-analysis complete — confidence: ${(updated.confidence_score * 100).toFixed(0)}%`);
+      load();
+    } catch {
+      toast.error("Re-analysis failed");
+    } finally {
+      setReanalysing(false);
+    }
+  }
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -325,6 +344,11 @@ export default function OpsCaseDetail() {
             {label}
           </button>
         ))}
+        <button onClick={handleReanalyse} disabled={reanalysing}
+          className="btn-ghost flex items-center gap-1 text-xs text-bfsi-gold border-bfsi-gold/30 disabled:opacity-50">
+          {reanalysing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+          Re-analyse
+        </button>
         <button onClick={load} className="btn-ghost ml-auto flex items-center gap-1 text-xs">
           <RefreshCw className="w-3 h-3" /> Refresh
         </button>

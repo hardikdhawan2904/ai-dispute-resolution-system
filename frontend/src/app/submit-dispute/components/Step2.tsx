@@ -310,7 +310,9 @@ export default function Step2({ form, config }: Step2Props) {
               <SubSection label="Transaction Metadata">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {nonToggleFields.map((f) => (
-                    <DynamicField key={f.key} field={f} form={form} />
+                    <div key={f.key} className={f.type === "masked-digits" ? "sm:col-span-2" : ""}>
+                      <DynamicField field={f} form={form} />
+                    </div>
                   ))}
                 </div>
               </SubSection>

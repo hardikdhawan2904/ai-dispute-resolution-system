@@ -45,6 +45,8 @@ DISPUTE INFORMATION:
   Fraud Flag       : {fraud_selected}
   Customer Comment : "{customer_comment}"
 
+SUPPORTING EVIDENCE:
+{supporting_evidence}
 ===================================
 ANALYSIS INSTRUCTIONS:
 
@@ -93,8 +95,15 @@ ANALYSIS INSTRUCTIONS:
    +0.2 if all fields are complete and consistent
    +0.1 if customer description is detailed and specific
    +0.1 if dispute reason matches complaint text
+   +0.15 if otp_received=Yes AND customer claims unauthorized (strong corroboration of social engineering)
+   +0.1  if card_blocked=Yes (customer took immediate protective action — reduces friendly fraud risk)
+   +0.1  if bank_contacted=Yes (prior contact creates paper trail, shows genuine dispute)
+   +0.1  if any fraud indicator (otp_shared, bank_impersonation, remote_access, phishing_link, sim_swap_suspected) is Yes and is consistent with the dispute reason
+   +0.1  if transaction_location is provided and is inconsistent with customer's stated context
    -0.1 if customer comment is vague or very short
    -0.1 if transaction details are incomplete
+   -0.15 if otp_received=No but customer claims account takeover or unauthorized access (weakens claim)
+   -0.1  if no protective steps taken (card not blocked, bank not contacted) despite claiming fraud
    -0.2 if there are contradictions between fields
    Cap at 1.0, floor at 0.1
 

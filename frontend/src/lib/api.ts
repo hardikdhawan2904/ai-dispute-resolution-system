@@ -255,6 +255,13 @@ export async function getCaseRiskExplanation(caseId: string): Promise<{ risk_ind
   return res.data;
 }
 
+// ── Ops — Re-analyse ──────────────────────────────────────────────────────────
+
+export async function reanalyseCase(caseId: string): Promise<DisputeCase> {
+  const res = await api.post(`/api/ops/cases/${caseId}/reanalyse`);
+  return res.data;
+}
+
 // ── Ops — Advanced search ─────────────────────────────────────────────────────
 
 export async function searchCases(params: {

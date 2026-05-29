@@ -6,10 +6,10 @@ import Link from "next/link";
 import toast from "react-hot-toast";
 import {
   ArrowLeft, AlertTriangle, Brain, Shield, CreditCard,
-  FileText, CheckCircle, Loader2, Activity,
+  FileText, CheckCircle, Loader2, Activity, RefreshCw,
 } from "lucide-react";
 import { cn, formatCurrency, formatDate, getPriorityColor, getStatusColor, formatConfidence } from "@/lib/utils";
-import { getCase, getAuditLogs, getWorkflowStates, updateCaseStatus } from "@/lib/api";
+import { getCase, getAuditLogs, getWorkflowStates, updateCaseStatus, reanalyseCase } from "@/lib/api";
 import type { DisputeCase, AuditLog, WorkflowState, CaseStatus } from "@/types";
 import RiskTags from "@/components/dispute/RiskTags";
 import ConfidenceScore from "@/components/dispute/ConfidenceScore";
@@ -40,6 +40,21 @@ export default function InternalReviewCaseDetail() {
   const [workflowStates, setWorkflowStates] = useState<WorkflowState[]>([]);
   const [loading, setLoading]               = useState(true);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [reanalysing, setReanalysing]       = useState(false);
+
+  async function handleReanalyse() {
+    if (!caseData || reanalysing) return;
+    setReanalysing(true);
+    try {
+      const updated = await reanalyseCase(caseData.case_id);
+      setCaseData(updated);
+      toast.success(`Re-analysis complete — confidence: ${(updated.confidence_score * 100).toFixed(0)}%`);
+    } catch {
+      toast.error("Re-analysis failed");
+    } finally {
+      setReanalysing(false);
+    }
+  }
   const [activeTab, setActiveTab]           = useState<"overview" | "ai" | "audit" | "workflow">("overview");
   const [liveUpdate, setLiveUpdate]         = useState(false);
 
@@ -173,6 +188,11 @@ export default function InternalReviewCaseDetail() {
           <Shield className="w-4 h-4 text-bfsi-gold" />
           <span className="text-sm text-bfsi-text-muted">Update investigation status:</span>
         </div>
+        <button onClick={handleReanalyse} disabled={reanalysing}
+          className="btn-ghost flex items-center gap-1.5 text-xs text-bfsi-gold border border-bfsi-gold/30 disabled:opacity-50">
+          {reanalysing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          Re-analyse with AI
+        </button>
         <div className="flex items-center gap-2">
           <select
             className="bfsi-select text-sm py-1.5 pr-8 w-auto"

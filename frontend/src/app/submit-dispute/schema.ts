@@ -71,6 +71,12 @@ export const formSchema = z.object({
     .max(2000),
   fraud_selected: z.boolean().default(false),
 
+  // Supporting evidence (confidence score inputs)
+  otp_received: z.boolean().optional(),
+  card_blocked: z.boolean().optional(),
+  bank_contacted: z.boolean().optional(),
+  transaction_location: z.string().optional(),
+
   // Fraud indicators
   otp_shared: z.boolean().optional(),
   device_lost: z.boolean().optional(),
