@@ -168,7 +168,18 @@ def reanalyse_case(case_id: str, db: Session = Depends(get_db)):
         "transaction_metadata": case.transaction_metadata or {},
     }
 
-    result = run_dispute_agent(dispute_input)
+    # Extract text from any previously uploaded evidence files
+    from utils.extractor import extract_text
+    upload_dir = _UPLOADS_ROOT / case_id
+    document_texts = []
+    if upload_dir.exists():
+        for f in sorted(upload_dir.iterdir()):
+            if f.is_file() and f.suffix.lower() in {".pdf", ".jpg", ".jpeg", ".png", ".xlsx", ".csv"}:
+                text = extract_text(str(f))
+                if text.strip():
+                    document_texts.append(f"[{f.name}]\n{text}")
+
+    result = run_dispute_agent(dispute_input, document_texts=document_texts)
 
     case.dispute_category        = result.get("dispute_category", case.dispute_category)
     case.fraud_suspicion         = result.get("fraud_suspicion", case.fraud_suspicion)
@@ -176,6 +187,8 @@ def reanalyse_case(case_id: str, db: Session = Depends(get_db)):
     case.confidence_score        = result.get("confidence_score", case.confidence_score)
     case.risk_tags               = result.get("risk_tags", case.risk_tags)
     case.structured_reasoning    = result.get("structured_reasoning", case.structured_reasoning)
+    case.evidence_match          = result.get("evidence_match")
+    case.evidence_match_note     = result.get("evidence_match_note", "")
 
     priority_score, priority_label = priority_engine.compute_priority(case.to_dict())
     case.priority_score = priority_score
@@ -253,6 +266,13 @@ def analyse_uploads(case_id: str, db: Session = Depends(get_db)):
             document_texts.append(f"[{file_path.name}]\n{text}")
             analysed += 1
 
+    if not document_texts:
+        files = [
+            {"name": f.name, "url": f"/uploads/{case_id}/{f.name}", "is_image": f.suffix.lower() in _IMAGE_EXTS}
+            for f in sorted(case_dir.iterdir()) if f.is_file()
+        ]
+        return {"case_id": case_id, "analysed": 0, "files": files}
+
     # ── Unified analysis: form data + all extracted texts ─────────────────
     dispute_input = {
         "case_id":             case_id,
@@ -281,6 +301,8 @@ def analyse_uploads(case_id: str, db: Session = Depends(get_db)):
     case.confidence_score        = result.get("confidence_score", case.confidence_score)
     case.risk_tags               = result.get("risk_tags", case.risk_tags)
     case.structured_reasoning    = result.get("structured_reasoning", case.structured_reasoning)
+    case.evidence_match          = result.get("evidence_match")
+    case.evidence_match_note     = result.get("evidence_match_note", "")
 
     db.add(AuditLog(
         case_id=case_id,

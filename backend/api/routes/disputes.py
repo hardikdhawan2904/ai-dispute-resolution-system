@@ -4,7 +4,7 @@ Dispute API routes — all endpoints for the BFSI dispute resolution platform.
 import asyncio
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from database.database import get_db
@@ -31,37 +31,59 @@ _UPLOAD_ROOT        = Path("uploads")
 
 
 @router.post("/submit-public", status_code=status.HTTP_201_CREATED)
-async def submit_dispute_public(payload: DisputeSubmissionRequest):
+async def submit_dispute_public(
+    payload: str = Form(...),
+    files: List[UploadFile] = File(default=[]),
+):
     """
-    Public dispute submission — no auth required.
+    Public dispute submission — accepts form data + optional evidence files in one request.
 
-    Immediately broadcasts DISPUTE_QUEUED so the internal review dashboard
-    shows the incoming case at once. Runs LangGraph in a thread executor,
-    then broadcasts ANALYSIS_COMPLETE with full AI data.
-
-    Returns only case_id + message to the submitter.
+    Evidence text is extracted from files BEFORE the LLM is called so everything
+    (form fields + document content) goes to the model in a single call.
+    Broadcasts DISPUTE_QUEUED immediately, then ANALYSIS_COMPLETE after the pipeline finishes.
     """
+    from utils.extractor import extract_text
+
+    data = DisputeSubmissionRequest.model_validate_json(payload).model_dump()
     case_id = generate_case_id()
 
     await ws_manager.broadcast({
-        "type": "DISPUTE_QUEUED",
-        "case_id": case_id,
-        "customer_id": payload.customer_id,
-        "customer_name": getattr(payload, "customer_name", ""),
-        "merchant": payload.merchant,
-        "amount": payload.amount,
-        "currency": getattr(payload, "currency", "INR"),
-        "timestamp": utc_now_iso(),
+        "type":          "DISPUTE_QUEUED",
+        "case_id":       case_id,
+        "customer_id":   data.get("customer_id", ""),
+        "customer_name": data.get("customer_name", ""),
+        "merchant":      data.get("merchant", ""),
+        "amount":        data.get("amount", 0),
+        "currency":      data.get("currency", "INR"),
+        "timestamp":     utc_now_iso(),
     })
 
-    data = payload.model_dump()
+    # Extract text from evidence files before calling the LLM
+    document_texts: List[str] = []
+    if files:
+        upload_dir = _UPLOAD_ROOT / case_id
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        for file in files:
+            ext = Path(file.filename or "").suffix.lower()
+            if ext not in _ALLOWED_EXTENSIONS:
+                continue
+            content = await file.read()
+            if len(content) > _MAX_FILE_BYTES:
+                continue
+            safe_name = Path(file.filename).name
+            dest = upload_dir / safe_name
+            dest.write_bytes(content)
+            text = extract_text(str(dest))
+            if text.strip():
+                document_texts.append(f"[{safe_name}]\n{text}")
+
     data["_preset_case_id"] = case_id
 
     def _run_sync():
         from database.database import SessionLocal
         db = SessionLocal()
         try:
-            return DisputeService.submit_dispute(data, db)
+            return DisputeService.submit_dispute(data, db, document_texts=document_texts)
         finally:
             db.close()
 
@@ -70,9 +92,9 @@ async def submit_dispute_public(payload: DisputeSubmissionRequest):
 
     if not result["success"]:
         await ws_manager.broadcast({
-            "type": "ANALYSIS_FAILED",
+            "type":    "ANALYSIS_FAILED",
             "case_id": case_id,
-            "errors": result["errors"],
+            "errors":  result["errors"],
         })
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -80,16 +102,16 @@ async def submit_dispute_public(payload: DisputeSubmissionRequest):
         )
 
     await ws_manager.broadcast({
-        "type": "ANALYSIS_COMPLETE",
+        "type":    "ANALYSIS_COMPLETE",
         "case_id": result["case_id"],
-        "case": result["final_case"],
+        "case":    result["final_case"],
     })
 
     api_logger.info(f"Dispute submitted: {result['case_id']}")
 
     return {
-        "success": True,
-        "case_id": result["case_id"],
+        "success":  True,
+        "case_id":  result["case_id"],
         "message": (
             "Your dispute has been submitted successfully and is now under review. "
             "Our team will investigate and contact you within 5–7 business days."
@@ -172,14 +194,11 @@ async def upload_case_documents(
     db: Session = Depends(get_db),
 ):
     """
-    Public endpoint — customers upload supporting documents after submitting a dispute.
-    Accepts PDF, JPG, PNG, XLSX (max 10 MB per file).
-    After saving all files, text is extracted from each (OCR for images, pdfplumber for PDF,
-    openpyxl for XLSX) and fed into a single unified dispute analysis call.
+    Store additional documents against an existing case.
+    Files are saved to disk and logged — no LLM re-run.
+    Evidence should be submitted together with the form via /submit-public.
     """
     from database.models import DisputeCase, AuditLog
-    from agents.dispute_agent import run_dispute_agent
-    from utils.extractor import extract_text
 
     case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
     if not case:
@@ -189,8 +208,6 @@ async def upload_case_documents(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     saved: List[str] = []
-
-    # ── Save all files first ──────────────────────────────────────────────
     for upload in files:
         ext = Path(upload.filename or "").suffix.lower()
         if ext not in _ALLOWED_EXTENSIONS:
@@ -208,68 +225,16 @@ async def upload_case_documents(
         (upload_dir / safe_name).write_bytes(content)
         saved.append(safe_name)
 
-    if not saved:
-        return {"case_id": case_id, "uploaded": [], "count": 0}
-
-    # ── Extract text from every uploaded file ─────────────────────────────
-    document_texts = []
-    for name in saved:
-        text = extract_text(str(upload_dir / name))
-        if text.strip():
-            document_texts.append(f"[{name}]\n{text}")
-
-    # ── Unified analysis: form data + all extracted document texts ────────
-    dispute_input = {
-        "case_id":             case_id,
-        "customer_id":         case.customer_id,
-        "customer_name":       case.customer_name,
-        "email":               case.email or "",
-        "phone":               case.phone or "",
-        "transaction_id":      case.transaction_id or "",
-        "transaction_type":    case.transaction_type or "",
-        "merchant":            case.merchant or "",
-        "amount":              case.amount or 0,
-        "currency":            case.currency or "INR",
-        "transaction_date":    case.transaction_date or "",
-        "transaction_time":    case.transaction_time or "",
-        "dispute_reason":      case.dispute_reason or "",
-        "fraud_selected":      case.fraud_suspicion or False,
-        "customer_comment":    case.customer_comment or "",
-        "transaction_metadata": case.transaction_metadata or {},
-    }
-
-    result = run_dispute_agent(dispute_input, document_texts=document_texts)
-
-    # ── Persist updated analysis ──────────────────────────────────────────
-    case.dispute_category        = result.get("dispute_category", case.dispute_category)
-    case.fraud_suspicion         = result.get("fraud_suspicion", case.fraud_suspicion)
-    case.customer_intent_summary = result.get("customer_intent_summary", case.customer_intent_summary)
-    case.confidence_score        = result.get("confidence_score", case.confidence_score)
-    case.risk_tags               = result.get("risk_tags", case.risk_tags)
-    case.structured_reasoning    = result.get("structured_reasoning", case.structured_reasoning)
-
-    db.add(AuditLog(
-        case_id=case_id,
-        event_type="DOCUMENT_UPLOADED",
-        actor="customer",
-        message=f"Customer uploaded {len(saved)} document(s): {', '.join(saved)}",
-        payload={"files": saved, "count": len(saved)},
-    ))
-    db.add(AuditLog(
-        case_id=case_id,
-        event_type="REANALYSED",
-        actor="system",
-        message=f"Unified analysis complete with {len(document_texts)} document(s). Confidence: {case.confidence_score:.0%}",
-        payload={
-            "files": saved,
-            "documents_with_text": len(document_texts),
-            "confidence_score": case.confidence_score,
-            "dispute_category": case.dispute_category,
-        },
-    ))
-
-    db.commit()
-    api_logger.info(f"Unified analysis complete for {case_id}: {len(document_texts)} docs extracted")
+    if saved:
+        db.add(AuditLog(
+            case_id=case_id,
+            event_type="DOCUMENT_UPLOADED",
+            actor="customer",
+            message=f"Customer uploaded {len(saved)} document(s): {', '.join(saved)}",
+            payload={"files": saved, "count": len(saved)},
+        ))
+        db.commit()
+        api_logger.info(f"Documents saved for {case_id}: {saved}")
 
     return {"case_id": case_id, "uploaded": saved, "count": len(saved)}
 
@@ -300,6 +265,8 @@ def _safe_case_dict(case: dict) -> dict:
         "confidence_score": case.get("confidence_score", 0.0),
         "risk_tags": case.get("risk_tags", []),
         "structured_reasoning": case.get("structured_reasoning"),
+        "evidence_match": case.get("evidence_match"),
+        "evidence_match_note": case.get("evidence_match_note"),
         "status": case.get("status", "Dispute Raised"),
         "workflow_ready": case.get("workflow_ready", False),
         # Enterprise fields

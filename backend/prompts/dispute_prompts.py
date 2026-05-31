@@ -99,11 +99,13 @@ ANALYSIS INSTRUCTIONS:
    +0.1  if bank_contacted=Yes (prior contact creates paper trail, shows genuine dispute)
    +0.1  if any fraud indicator (otp_shared, bank_impersonation, remote_access, phishing_link, sim_swap_suspected) is Yes and is consistent with the dispute reason
    +0.1  if transaction_location is provided and is inconsistent with customer's stated context
+   +0.2  if attached documents MATCH and corroborate the customer's claim (evidence_match=true)
    -0.1 if customer comment is vague or very short
    -0.1 if transaction details are incomplete
    -0.15 if otp_received=No but customer claims account takeover or unauthorized access (weakens claim)
    -0.1  if no protective steps taken (card not blocked, bank not contacted) despite claiming fraud
    -0.2 if there are contradictions between fields
+   -0.2  if attached documents CONTRADICT or do not support the customer's claim (evidence_match=false)
    Cap at 1.0, floor at 0.1
 
 6. CUSTOMER INTENT SUMMARY — 2–3 sentences summarising:
@@ -112,6 +114,29 @@ ANALYSIS INSTRUCTIONS:
 7. STRUCTURED REASONING — 3–5 sentences explaining:
    Why you assigned this category, why fraud_suspicion is true/false,
    key evidence from the complaint, and what the investigation team should focus on first.
+
+8. EVIDENCE VERIFICATION — Examine ATTACHED DOCUMENTS against the customer's claim:
+   - evidence_match: MUST be one of three values ONLY:
+       true  — document is present AND its content or filename is consistent with the claim
+       false — document is present BUT contradicts the claim, is irrelevant, or cannot be verified
+       null  — ONLY when ATTACHED DOCUMENTS section literally says "No documents attached."
+     IMPORTANT: If ANY document is listed (even if OCR text is unavailable), set true or false — NEVER null.
+     If OCR failed, infer from the filename and dispute context.
+   - evidence_match_note: 1–2 sentences on what the document appears to be and whether it
+     supports the claim. If OCR failed, state that and give your filename-based inference.
+     Leave as "" only if no documents attached.
+
+   Corroboration examples (evidence_match=true):
+     • Bank SMS/screenshot with matching merchant and amount for a duplicate charge claim
+     • Filename "duplicate_charge.jpg" submitted for a Duplicate Transaction dispute — consistent
+     • Refund confirmation for a "refund not received" claim
+     • Cancellation screenshot for a subscription abuse claim
+
+   Contradiction examples (evidence_match=false):
+     • Document shows a different amount or merchant than claimed
+     • Receipt shows customer approved the transaction they claim was unauthorized
+     • Document date is inconsistent with the dispute timeline
+     • Filename suggests unrelated content (e.g. "selfie.jpg" for a fraud claim)
 
 ===================================
 REQUIRED OUTPUT FORMAT (return ONLY this JSON — no other text):
@@ -130,6 +155,8 @@ REQUIRED OUTPUT FORMAT (return ONLY this JSON — no other text):
   "confidence_score": <0.1 to 1.0>,
   "risk_tags": ["<TAG>", "..."],
   "structured_reasoning": "<3-5 sentences of reasoning>",
+  "evidence_match": <true|false|null>,
+  "evidence_match_note": "<1-2 sentences or empty string if no documents>",
   "status": "Dispute Raised",
   "workflow_ready": true,
   "created_at": "{created_at}"

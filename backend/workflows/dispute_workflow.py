@@ -32,6 +32,7 @@ class TraceEntry(TypedDict):
 class DisputeWorkflowState(TypedDict):
     # Raw intake
     dispute_input: dict
+    document_texts: List[str]
 
     # Validation
     validation_passed: bool
@@ -161,7 +162,7 @@ def dispute_understanding_node(state: DisputeWorkflowState) -> dict:
     start = time.time()
     node = "dispute_understanding"
 
-    analysis = run_dispute_agent(state["dispute_input"])
+    analysis = run_dispute_agent(state["dispute_input"], document_texts=state.get("document_texts") or [])
 
     log_workflow_event(
         workflow_logger,
@@ -359,24 +360,26 @@ def build_dispute_workflow() -> Any:
 dispute_workflow = build_dispute_workflow()
 
 
-def run_dispute_workflow(dispute_input: dict) -> dict:
+def run_dispute_workflow(dispute_input: dict, document_texts: Optional[List[str]] = None) -> dict:
     """
     Execute the dispute workflow for a given intake submission.
+    document_texts: evidence file text extracted before calling the LLM.
 
     Returns:
         dict with keys: final_case, validation_errors, execution_trace, current_stage
     """
     initial_state: DisputeWorkflowState = {
-        "dispute_input": dispute_input,
-        "validation_passed": False,
-        "validation_errors": [],
+        "dispute_input":      dispute_input,
+        "document_texts":     document_texts or [],
+        "validation_passed":  False,
+        "validation_errors":  [],
         "validation_warnings": [],
-        "ai_analysis": None,
-        "final_case": None,
-        "execution_trace": [],
-        "current_stage": "start",
-        "error_message": None,
-        "case_id": "",
+        "ai_analysis":        None,
+        "final_case":         None,
+        "execution_trace":    [],
+        "current_stage":      "start",
+        "error_message":      None,
+        "case_id":            "",
     }
 
     workflow_logger.info(

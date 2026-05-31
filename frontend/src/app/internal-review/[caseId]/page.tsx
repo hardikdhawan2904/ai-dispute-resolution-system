@@ -10,7 +10,7 @@ import {
   ImageIcon, X, ZoomIn,
 } from "lucide-react";
 import { cn, formatCurrency, formatDate, getPriorityColor, getStatusColor, formatConfidence } from "@/lib/utils";
-import { getCase, getAuditLogs, getWorkflowStates, updateCaseStatus, reanalyseCase, getCaseUploads, analyseUploads } from "@/lib/api";
+import { getCase, getAuditLogs, getWorkflowStates, updateCaseStatus, reanalyseCase, getCaseUploads } from "@/lib/api";
 import type { CaseUploadFile } from "@/lib/api";
 import type { DisputeCase, AuditLog, WorkflowState, CaseStatus } from "@/types";
 import RiskTags from "@/components/dispute/RiskTags";
@@ -45,7 +45,6 @@ export default function InternalReviewCaseDetail() {
   const [reanalysing, setReanalysing]       = useState(false);
   const [uploads, setUploads]               = useState<CaseUploadFile[]>([]);
   const [lightbox, setLightbox]             = useState<string | null>(null);
-  const [analysing, setAnalysing]           = useState(false);
 
   async function handleReanalyse() {
     if (!caseData || reanalysing) return;
@@ -289,6 +288,39 @@ export default function InternalReviewCaseDetail() {
               {caseData.customer_intent_summary || "No summary available"}
             </div>
           </div>
+
+          {/* Evidence verification verdict */}
+          <div className="bfsi-card p-5 lg:col-span-2">
+            <div className="flex items-center gap-2 mb-4">
+              <Shield className="w-4 h-4 text-bfsi-gold" />
+              <p className="section-header mb-0">Evidence Verification</p>
+            </div>
+            {(caseData as any).evidence_match === null || (caseData as any).evidence_match === undefined ? (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-bfsi-muted border border-bfsi-border">
+                <span className="text-xs text-bfsi-text-dim">No documents were submitted with this dispute.</span>
+              </div>
+            ) : (caseData as any).evidence_match === true ? (
+              <div className="flex items-start gap-3 p-4 rounded-lg bg-green-500/10 border border-green-500/30">
+                <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-green-400 mb-1">Evidence Matches Claim</p>
+                  <p className="text-sm text-bfsi-text-muted leading-relaxed">
+                    {(caseData as any).evidence_match_note || "The submitted documents corroborate the customer's dispute."}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/30">
+                <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-400 mb-1">Evidence Does Not Match Claim</p>
+                  <p className="text-sm text-bfsi-text-muted leading-relaxed">
+                    {(caseData as any).evidence_match_note || "The submitted documents do not support the customer's dispute."}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="bfsi-card p-5 lg:col-span-2">
             <div className="flex items-center gap-2 mb-4">
               <Brain className="w-4 h-4 text-bfsi-gold" />
@@ -313,29 +345,6 @@ export default function InternalReviewCaseDetail() {
       {/* ── Evidence tab ──────────────────────────────────────────────────── */}
       {activeTab === "evidence" && (
         <div className="space-y-4">
-          {uploads.length > 0 && (
-            <div className="flex justify-end">
-              <button
-                onClick={async () => {
-                  if (!caseData || analysing) return;
-                  setAnalysing(true);
-                  try {
-                    const res = await analyseUploads(caseData.case_id);
-                    setUploads(res.files);
-                    const updated = await getCase(caseData.case_id);
-                    setCaseData(updated);
-                    toast.success(`Analysed ${res.analysed} file${res.analysed !== 1 ? "s" : ""} — confidence updated`);
-                  } catch { toast.error("Analysis failed"); }
-                  finally { setAnalysing(false); }
-                }}
-                disabled={analysing}
-                className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border border-bfsi-gold/40 text-bfsi-gold hover:bg-bfsi-gold/10 transition-colors disabled:opacity-50"
-              >
-                {analysing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                {analysing ? "Analysing…" : "Run Analysis"}
-              </button>
-            </div>
-          )}
           {uploads.length === 0 ? (
             <div className="bfsi-card p-10 text-center">
               <ImageIcon className="w-10 h-10 text-bfsi-text-dim mx-auto mb-3" />

@@ -171,6 +171,8 @@ class DisputeCaseResponse(BaseModel):
     confidence_score: float
     risk_tags: List[str]
     structured_reasoning: Optional[str]
+    evidence_match: Optional[bool] = None
+    evidence_match_note: Optional[str] = None
     status: str
     workflow_ready: bool
     # Enterprise fields

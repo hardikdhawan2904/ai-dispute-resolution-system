@@ -24,10 +24,10 @@ class DisputeService:
     # ── Submission ─────────────────────────────────────────────────────────────
 
     @staticmethod
-    def submit_dispute(dispute_input: dict, db: Session) -> dict:
+    def submit_dispute(dispute_input: dict, db: Session, document_texts: Optional[List[str]] = None) -> dict:
         """
         Full dispute submission pipeline:
-          1. Run LangGraph workflow
+          1. Run LangGraph workflow (evidence text pre-extracted, passed in)
           2. Persist dispute case
           3. Write audit log
           4. Persist workflow state snapshots
@@ -41,8 +41,8 @@ class DisputeService:
             },
         )
 
-        # Execute the LangGraph workflow
-        workflow_result = run_dispute_workflow(dispute_input)
+        # Execute the LangGraph workflow — document_texts already extracted before this call
+        workflow_result = run_dispute_workflow(dispute_input, document_texts=document_texts or [])
         final_case = workflow_result.get("final_case")
         validation_errors = workflow_result.get("validation_errors", [])
         execution_trace = workflow_result.get("execution_trace", [])
@@ -268,6 +268,8 @@ class DisputeService:
             confidence_score=final_case.get("confidence_score", 0.5),
             risk_tags=final_case.get("risk_tags", []),
             structured_reasoning=final_case.get("structured_reasoning", ""),
+            evidence_match=final_case.get("evidence_match"),
+            evidence_match_note=final_case.get("evidence_match_note", ""),
             status="Dispute Raised",
             workflow_ready=True,
             # Enterprise fields

@@ -36,12 +36,22 @@ def extract_text(file_path: str) -> str:
 
 
 def _ocr_image(file_path: str) -> str:
-    """Extract text from an image using Tesseract OCR."""
+    """Extract text from an image using Tesseract OCR.
+    Falls back to a filename stub when Tesseract is unavailable so the LLM
+    still knows a document was attached."""
+    path = Path(file_path)
+    stub = (
+        f"[Document attached: {path.name}. "
+        f"Automatic OCR text reading is unavailable. "
+        f"Assess document relevance based on its filename and the dispute context. "
+        f"Do NOT set evidence_match to null — a document was submitted.]"
+    )
+
     try:
         import pytesseract
         from PIL import Image
     except ImportError:
-        return ""
+        return stub
 
     tess_cmd = os.getenv("TESSERACT_CMD")
     if tess_cmd:
@@ -49,9 +59,10 @@ def _ocr_image(file_path: str) -> str:
 
     try:
         img = Image.open(file_path)
-        return pytesseract.image_to_string(img).strip()[:_MAX_CHARS]
+        text = pytesseract.image_to_string(img).strip()[:_MAX_CHARS]
+        return text if text else stub
     except Exception:
-        return ""
+        return stub
 
 
 def _extract_pdf(file_path: str) -> str:

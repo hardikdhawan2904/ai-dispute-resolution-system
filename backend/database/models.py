@@ -119,6 +119,10 @@ class DisputeCase(Base):
     locked_by             = Column(String(128), nullable=True)
     locked_at             = Column(DateTime, nullable=True)
 
+    # Evidence verification (LLM verdict on attached documents)
+    evidence_match        = Column(Boolean, nullable=True)   # null = no docs, true/false = match verdict
+    evidence_match_note   = Column(Text, nullable=True)
+
     # Supporting evidence (raw form fields for re-analysis)
     transaction_metadata  = Column(JSON, default=dict)
 
@@ -156,6 +160,8 @@ class DisputeCase(Base):
             "confidence_score": self.confidence_score,
             "risk_tags": self.risk_tags or [],
             "structured_reasoning": self.structured_reasoning,
+            "evidence_match": self.evidence_match,
+            "evidence_match_note": self.evidence_match_note,
             "status": self.status,
             "workflow_ready": self.workflow_ready,
             # Enterprise fields

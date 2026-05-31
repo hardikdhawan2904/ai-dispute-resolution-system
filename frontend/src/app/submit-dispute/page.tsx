@@ -154,13 +154,15 @@ export default function SubmitDisputePage() {
         transaction_metadata: metadata,
       };
 
+      // Send form data + evidence files together in one request so the LLM
+      // receives everything (form fields + document text) in a single call.
+      const fd = new FormData();
+      fd.append("payload", JSON.stringify(payload));
+      files.forEach((f) => fd.append("files", f));
+
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/disputes/submit-public`,
-        {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify(payload),
-        }
+        { method: "POST", body: fd }
       );
 
       const data = await res.json();
@@ -173,20 +175,6 @@ export default function SubmitDisputePage() {
             ? detail
             : "Submission failed. Please try again.";
         throw new Error(msg);
-      }
-
-      // Upload any attached documents (best-effort — non-fatal on failure)
-      if (files.length > 0) {
-        try {
-          const fd = new FormData();
-          files.forEach((f) => fd.append("files", f));
-          await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/disputes/cases/${data.case_id}/documents`,
-            { method: "POST", body: fd }
-          );
-        } catch {
-          // Document upload failure does not block the submission success flow
-        }
       }
 
       // Switch to the Track tab with the newly submitted case
