@@ -48,9 +48,41 @@ agent:
   # ── LangGraph Integration ───────────────────────────────────────────────────
   langgraph:
     framework: LangGraph (StateGraph)
-    pattern: Deterministic Sequential Pipeline
-    entry_point: validate
+    pattern: ReAct — Agent-Tools Loop
     state_schema: DisputeAgentState
+
+    # ── Executable pipeline config — imported by config.py, drives graph.py and nodes/
+    pipeline:
+      entry_point: agent
+
+      # Tools the LLM agent calls autonomously — all 4 are LLM-driven (pure agentic)
+      agent_tools:
+        - validate_dispute_input
+        - build_evidence_summary
+        - calculate_priority
+        - clamp_score
+
+      nodes:
+        - id: agent
+          type: llm
+          llm_call: true
+          purpose: "LLM with bound tools — reasons over dispute, calls tools autonomously"
+
+        - id: tools
+          type: ToolNode
+          llm_call: false
+          purpose: "Executes whichever tool the agent LLM requested"
+
+        - id: finalize
+          type: function
+          llm_call: false
+          purpose: "Parse LLM final JSON response, enrich with DB fields, build final_case"
+
+      edges:
+        - {from: agent,    to: tools,    condition: has_tool_calls}
+        - {from: agent,    to: finalize, condition: no_tool_calls}
+        - {from: tools,    to: agent}
+        - {from: finalize, to: END}
 
     description: >
       ARIA runs as a compiled LangGraph StateGraph. The graph is a strict
@@ -117,10 +149,10 @@ agent:
         llm_call: false
 
     edges:
-      - from: validate       to: build_evidence
-      - from: build_evidence to: run_analysis
-      - from: run_analysis   to: finalize
-      - from: finalize       to: END
+      - {from: validate,       to: build_evidence}
+      - {from: build_evidence, to: run_analysis}
+      - {from: run_analysis,   to: finalize}
+      - {from: finalize,       to: END}
 
   # ── Tools ───────────────────────────────────────────────────────────────────
   tools:

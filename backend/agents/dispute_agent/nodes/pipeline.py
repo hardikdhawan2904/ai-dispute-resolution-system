@@ -1,132 +1,82 @@
 """
-Deterministic pipeline nodes — each node calls its tool directly.
-No LLM is used for routing. Only run_analysis_node triggers an LLM call.
+ReAct pipeline nodes.
 
-Graph edges:
-  validate → build_evidence → run_analysis → finalize → END
+call_model     : invoke LLM (with all 4 tools bound) against the current message history
+should_continue: route to 'tools' if tool calls are pending, else to 'finalize'
+finalize_node  : parse the LLM's final JSON and stamp server-side fields — nothing else
 """
-import json
+from __future__ import annotations
 
+import os
+from typing import Literal
+
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_groq import ChatGroq
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+from agents.dispute_agent.config import get_llm_config
 from agents.dispute_agent.state import DisputeAgentState
-from agents.dispute_agent.tools import (
-    validate_dispute_input,
-    build_evidence_summary,
-    run_dispute_analysis,
-    clamp_score,
-    calculate_priority,
-)
+from agents.dispute_agent.tools import TOOLS
 from utils.helpers import extract_json_from_text, utc_now_iso, generate_case_id
 from utils.logger import agent_logger, log_workflow_event
 
-_MAX_DOC_CHARS = 3000
+# ── LLM (config sourced from agent.yaml) ─────────────────────────────────────
+_cfg = get_llm_config()
+_llm = ChatGroq(
+    model_name=_cfg["model"],
+    temperature=_cfg["temperature"],
+    max_tokens=_cfg["max_tokens"],
+    api_key=os.environ.get("GROQ_API_KEY"),
+)
+_llm_with_tools = _llm.bind_tools(TOOLS)
 
 
-def validate_node(state: DisputeAgentState) -> dict:
-    d = state["dispute_input"]
-    case_id = validate_dispute_input.invoke({
-        "customer_id":      d.get("customer_id", ""),
-        "existing_case_id": d.get("case_id", ""),
-    })
-    return {"case_id": case_id}
+# ── Nodes ─────────────────────────────────────────────────────────────────────
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10))
+def call_model(state: DisputeAgentState) -> dict:
+    """Agent node — invoke LLM with the full message history."""
+    response = _llm_with_tools.invoke(state["messages"])
+    agent_logger.debug(
+        "LLM response received",
+        extra={"tool_calls": len(getattr(response, "tool_calls", None) or [])},
+    )
+    return {"messages": [response]}
 
 
-def build_evidence_node(state: DisputeAgentState) -> dict:
-    d = state["dispute_input"]
-    meta = d.get("transaction_metadata") or {}
-
-    evidence = build_evidence_summary.invoke({"metadata_json": json.dumps(meta)})
-
-    doc_texts = state.get("document_texts") or []
-    if doc_texts:
-        parts = []
-        for i, t in enumerate(doc_texts):
-            if t.strip():
-                body = t[:_MAX_DOC_CHARS] + ("..." if len(t) > _MAX_DOC_CHARS else "")
-                parts.append(f"Document {i + 1}:\n{body}")
-        doc_section = "\n\n".join(parts) if parts else "No documents attached."
-    else:
-        doc_section = "No documents attached."
-
-    return {"supporting_evidence": evidence, "document_section": doc_section}
-
-
-def run_analysis_node(state: DisputeAgentState) -> dict:
-    """Single LLM call — the only point in the pipeline where Groq is invoked."""
-    d = state["dispute_input"]
-    dispute_fields = {
-        "customer_name":    d.get("customer_name", "Unknown"),
-        "customer_id":      d.get("customer_id", ""),
-        "transaction_type": d.get("transaction_type", ""),
-        "merchant":         d.get("merchant", ""),
-        "amount":           d.get("amount", 0),
-        "currency":         d.get("currency", "INR"),
-        "transaction_date": d.get("transaction_date", ""),
-        "transaction_time": d.get("transaction_time", ""),
-        "dispute_reason":   d.get("dispute_reason", ""),
-        "fraud_selected":   d.get("fraud_selected", False),
-        "customer_comment": d.get("customer_comment", ""),
-    }
-    raw = run_dispute_analysis.invoke({
-        "case_id":            state["case_id"],
-        "dispute_input_json": json.dumps(dispute_fields),
-        "supporting_evidence": state["supporting_evidence"],
-        "document_section":   state["document_section"],
-    })
-    return {"raw_llm_response": raw}
+def should_continue(state: DisputeAgentState) -> Literal["tools", "finalize"]:
+    """Conditional edge — tool calls pending → tools node, otherwise → finalize."""
+    last: AIMessage = state["messages"][-1]
+    if getattr(last, "tool_calls", None):
+        return "tools"
+    return "finalize"
 
 
 def finalize_node(state: DisputeAgentState) -> dict:
+    """
+    Parse the LLM's final JSON and stamp the server-owned fields.
+    No tool calls here — the LLM called all tools autonomously before this.
+    """
     d = state["dispute_input"]
-    case_id = state.get("case_id") or d.get("case_id") or generate_case_id()
-    raw = state.get("raw_llm_response", "")
+    case_id = _extract_case_id(state["messages"]) or d.get("case_id") or generate_case_id()
 
+    last = state["messages"][-1]
+    raw = last.content if hasattr(last, "content") else ""
     parsed = extract_json_from_text(raw) if raw else None
 
     if not parsed:
-        agent_logger.warning("Failed to parse LLM JSON — using fallback", extra={"case_id": case_id})
+        agent_logger.warning("LLM JSON parse failed — using fallback", extra={"case_id": case_id})
         amount = float(d.get("amount", 0))
-        fraud  = bool(d.get("fraud_selected", False))
-        return {"final_case": {
-            "case_id":                 case_id,
-            "customer_id":             d.get("customer_id", ""),
-            "transaction_id":          d.get("transaction_id", ""),
-            "transaction_type":        d.get("transaction_type", ""),
-            "merchant":                d.get("merchant", ""),
-            "amount":                  amount,
-            "currency":                d.get("currency", "INR"),
-            "dispute_category":        "Other",
-            "fraud_suspicion":         fraud,
-            "customer_intent_summary": (
-                "Automated analysis failed — manual review required. "
-                f"Customer reported: {d.get('dispute_reason', 'N/A')}"
-            ),
-            "priority":             calculate_priority.invoke({"amount": amount, "fraud_suspicion": fraud, "risk_tags": []}),
-            "confidence_score":     0.1,
-            "risk_tags":            ["HIGH_PRIORITY_CASE"] if fraud else [],
-            "structured_reasoning": "AI analysis could not be completed. Manual investigation required.",
-            "status":               "Dispute Raised",
-            "workflow_ready":       True,
-            "created_at":           utc_now_iso(),
-        }}
+        fraud = bool(d.get("fraud_selected", False))
+        return {"final_case": _fallback_case(d, case_id, amount, fraud)}
 
+    # Only fields the server owns — everything else came from the LLM via its tools
     parsed["case_id"]        = case_id
     parsed["customer_id"]    = d.get("customer_id", "")
     parsed["transaction_id"] = d.get("transaction_id", "")
     parsed.setdefault("status",         "Dispute Raised")
     parsed.setdefault("workflow_ready", True)
     parsed.setdefault("created_at",     utc_now_iso())
-
-    parsed["confidence_score"] = clamp_score.invoke(
-        {"score": float(parsed.get("confidence_score", 0.5))}
-    )
-
-    valid_priorities = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
-    if parsed.get("priority") not in valid_priorities:
-        parsed["priority"] = calculate_priority.invoke({
-            "amount":          float(d.get("amount", 0)),
-            "fraud_suspicion": parsed.get("fraud_suspicion", False),
-            "risk_tags":       parsed.get("risk_tags", []),
-        })
 
     log_workflow_event(
         agent_logger,
@@ -141,5 +91,50 @@ def finalize_node(state: DisputeAgentState) -> dict:
             "fraud_suspicion":  parsed.get("fraud_suspicion"),
         },
     )
-
     return {"final_case": parsed}
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _extract_case_id(messages: list) -> str:
+    """Scan ToolMessages for the case_id returned by validate_dispute_input."""
+    for msg in reversed(messages):
+        if isinstance(msg, ToolMessage):
+            content = msg.content
+            if isinstance(content, str) and content.strip().startswith("CASE-"):
+                return content.strip()
+    return ""
+
+
+def _fallback_priority(amount: float, fraud: bool) -> str:
+    if fraud and amount > 50_000: return "CRITICAL"
+    if fraud or amount > 50_000:  return "HIGH"
+    if amount > 10_000:           return "MEDIUM"
+    return "LOW"
+
+
+def _fallback_case(d: dict, case_id: str, amount: float, fraud: bool) -> dict:
+    return {
+        "case_id":                 case_id,
+        "customer_id":             d.get("customer_id", ""),
+        "transaction_id":          d.get("transaction_id", ""),
+        "transaction_type":        d.get("transaction_type", ""),
+        "merchant":                d.get("merchant", ""),
+        "amount":                  amount,
+        "currency":                d.get("currency", "INR"),
+        "dispute_category":        "Other",
+        "fraud_suspicion":         fraud,
+        "customer_intent_summary": (
+            "Automated analysis failed — manual review required. "
+            f"Customer reported: {d.get('dispute_reason', 'N/A')}"
+        ),
+        "priority":             _fallback_priority(amount, fraud),
+        "confidence_score":     0.1,
+        "risk_tags":            ["HIGH_PRIORITY_CASE"] if fraud else [],
+        "structured_reasoning": "AI analysis could not be completed. Manual investigation required.",
+        "evidence_match":       None,
+        "evidence_match_note":  "",
+        "status":               "Dispute Raised",
+        "workflow_ready":       True,
+        "created_at":           utc_now_iso(),
+    }
