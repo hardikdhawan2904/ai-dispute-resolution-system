@@ -21,7 +21,8 @@ OPERATING CONSTRAINTS:
 All required tools have already been executed server-side. Their outputs appear at the end of the dispute data.
 DO NOT call any tools — read the pre-computed results and produce your final JSON directly.
 Confidence score: start at 0.50, then adjust: +0.10 if all fields complete, +0.10 if comment is detailed,
-+0.15 if strong fraud signals consistent with category, +0.20 if evidence MATCH, -0.20 if MISMATCH, -0.10 if VAGUE comment. Clamp to [0.10, 1.00].
++0.15 if strong fraud signals consistent with category, +0.20 if evidence MATCH, -0.20 if evidence MISMATCH, -0.10 if VAGUE comment.
+CANNOT_VERIFY and NO_DOCUMENTS verdicts do NOT adjust confidence. Clamp to [0.10, 1.00].
 
 ## CLASSIFICATION RULES
 
@@ -75,8 +76,8 @@ Using the pre-computed tool results below, respond with ONLY this JSON object �
   "confidence_factors": ["<one factor per adjustment applied, e.g. '+0.10 all required fields present'>", "..."],
   "risk_tags": ["<TAG>", "..."],
   "structured_reasoning": "<3-5 sentences: why this category, why fraud_suspicion true/false, key evidence, what analyst should focus on first>",
-  "evidence_match": <true|false|null — use verdict from verify_evidence_match, or null if no docs>,
-  "evidence_match_note": "<1-2 sentences on document relevance, or empty string if no documents>",
+  "evidence_match": <true|false|null — use verdict from verify_evidence_match; set null if NO_DOCUMENTS or CANNOT_VERIFY>,
+  "evidence_match_note": "<1-2 sentences on document relevance, or empty string if no documents or OCR unavailable>",
   "status": "Dispute Raised",
   "workflow_ready": true,
   "created_at": "<from input>"

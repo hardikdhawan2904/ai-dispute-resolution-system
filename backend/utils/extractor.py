@@ -1,7 +1,7 @@
 """
 Unified text extractor — routes by file type to the appropriate extraction method.
 
-Image       → Tesseract OCR (pytesseract)
+Image       → Tesseract OCR (pytesseract, if installed) → RapidOCR (pure-Python fallback)
 PDF         → pdfplumber; falls back to Tesseract OCR for scanned PDFs
 XLSX / CSV  → openpyxl / csv module
 """
@@ -36,9 +36,9 @@ def extract_text(file_path: str) -> str:
 
 
 def _ocr_image(file_path: str) -> str:
-    """Extract text from an image using Tesseract OCR.
-    Falls back to a filename stub when Tesseract is unavailable so the LLM
-    still knows a document was attached."""
+    """Extract text from an image.
+    Tries Tesseract first (if installed), then RapidOCR (pure-Python fallback).
+    Returns a filename stub when all OCR engines are unavailable."""
     path = Path(file_path)
     stub = (
         f"[Document attached: {path.name}. "
@@ -47,20 +47,18 @@ def _ocr_image(file_path: str) -> str:
         f"Do NOT set evidence_match to null — a document was submitted.]"
     )
 
+    # ── Attempt 1: Tesseract + Pillow ─────────────────────────────────────────
     try:
         import pytesseract
         from PIL import Image, ImageEnhance, ImageFilter
-    except ImportError:
-        return stub
 
-    tess_cmd = os.getenv("TESSERACT_CMD")
-    if tess_cmd:
-        pytesseract.pytesseract.tesseract_cmd = tess_cmd
+        tess_cmd = os.getenv("TESSERACT_CMD")
+        if tess_cmd:
+            pytesseract.pytesseract.tesseract_cmd = tess_cmd
 
-    try:
         img = Image.open(file_path)
 
-        # Normalise to RGB (handles RGBA, palette, etc.)
+        # Normalise to RGB (handles RGBA, palette modes, etc.)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
 
@@ -75,11 +73,34 @@ def _ocr_image(file_path: str) -> str:
         img = img.filter(ImageFilter.SHARPEN)
         img = ImageEnhance.Contrast(img).enhance(2.0)
 
-        config = "--psm 6 --oem 3"  # assume uniform block of text; LSTM engine
+        config = "--psm 6 --oem 3"  # uniform block of text; LSTM engine
         text = pytesseract.image_to_string(img, config=config).strip()[:_MAX_CHARS]
-        return text if text else stub
+        if text:
+            return text
     except Exception:
-        return stub
+        pass
+
+    # ── Attempt 2: RapidOCR (pure-Python, no binary needed) ──────────────────
+    try:
+        import numpy as np
+        from PIL import Image
+        from rapidocr_onnxruntime import RapidOCR
+
+        engine = RapidOCR()
+        img = Image.open(file_path)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        arr = np.array(img)
+        result, _ = engine(arr)
+        if result:
+            lines = [item[1] for item in result if item and len(item) > 1]
+            text = "\n".join(lines).strip()[:_MAX_CHARS]
+            if text:
+                return text
+    except Exception:
+        pass
+
+    return stub
 
 
 def _extract_pdf(file_path: str) -> str:
