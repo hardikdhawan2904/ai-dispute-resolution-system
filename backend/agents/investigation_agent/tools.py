@@ -38,10 +38,13 @@ def lookup_customer_history(customer_id: str) -> str:
     db = SessionLocal()
     try:
         query = db.query(DisputeCase).filter(DisputeCase.customer_id == customer_id)
-        # Exclude the active case (set server-side — not LLM-controlled)
+        # Exclude the active case and any cases submitted after it (not yet history)
         exclude_id = _active_case_id.get()
         if exclude_id:
             query = query.filter(DisputeCase.case_id != exclude_id)
+            current_case = db.query(DisputeCase).filter(DisputeCase.case_id == exclude_id).first()
+            if current_case and current_case.created_at:
+                query = query.filter(DisputeCase.created_at < current_case.created_at)
         cases = query.all()
 
         if not cases:
@@ -123,11 +126,18 @@ def check_merchant_risk(merchant_name: str) -> str:
 
     db = SessionLocal()
     try:
-        cases = (
+        query = (
             db.query(DisputeCase)
             .filter(DisputeCase.merchant.ilike(f"%{merchant_name[:30]}%"))
-            .all()
         )
+        # Exclude the active case and any submitted after it (not yet historical)
+        exclude_id = _active_case_id.get()
+        if exclude_id:
+            query = query.filter(DisputeCase.case_id != exclude_id)
+            current_case = db.query(DisputeCase).filter(DisputeCase.case_id == exclude_id).first()
+            if current_case and current_case.created_at:
+                query = query.filter(DisputeCase.created_at < current_case.created_at)
+        cases = query.all()
 
         merchant_lower  = merchant_name.lower()
         blacklisted     = any(p in merchant_lower for p in _BLACKLIST_PATTERNS)
@@ -267,6 +277,13 @@ def lookup_related_cases(dispute_category: str, merchant: str = "") -> str:
         )
         if merchant:
             query = query.filter(DisputeCase.merchant.ilike(f"%{merchant[:20]}%"))
+        # Exclude the active case and any submitted after it
+        exclude_id = _active_case_id.get()
+        if exclude_id:
+            query = query.filter(DisputeCase.case_id != exclude_id)
+            current_case = db.query(DisputeCase).filter(DisputeCase.case_id == exclude_id).first()
+            if current_case and current_case.created_at:
+                query = query.filter(DisputeCase.created_at < current_case.created_at)
 
         cases = query.all()
 
