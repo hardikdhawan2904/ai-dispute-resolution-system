@@ -167,7 +167,7 @@ export default function Step2({ form, config }: Step2Props) {
     <div className="space-y-4">
 
       {/* ── Transaction Type Grid ──────────────────────────────────────────── */}
-      <Panel label="Select Transaction Type">
+      <Panel label="Select Transaction Type *">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {TX_TYPES.map((type) => {
             const Icon     = TX_ICONS[type];

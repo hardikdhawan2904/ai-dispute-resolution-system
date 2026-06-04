@@ -130,7 +130,7 @@ export default function Step3({ form, reasons }: Step3Props) {
       {/* ── Reason for Dispute ─────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded">
         <div className="px-4 py-3 border-b border-gray-100">
-          <p className="text-xs font-semibold text-gray-700">Reason for Dispute</p>
+          <p className="text-xs font-semibold text-gray-700">Reason for Dispute <span className="text-red-500">*</span></p>
           <p className="text-[11px] text-gray-400 mt-0.5">
             Select the category that best describes your complaint
           </p>
@@ -176,7 +176,7 @@ export default function Step3({ form, reasons }: Step3Props) {
       {/* ── Case Description ───────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded">
         <div className="px-4 py-3 border-b border-gray-100">
-          <p className="text-xs font-semibold text-gray-700">Case Description</p>
+          <p className="text-xs font-semibold text-gray-700">Case Description <span className="text-red-500">*</span></p>
           <p className="text-[11px] text-gray-400 mt-0.5">
             Describe the disputed transaction in your own words
           </p>
