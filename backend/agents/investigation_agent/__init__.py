@@ -23,6 +23,7 @@ from agents.investigation_agent.graph import investigation_graph
 from agents.investigation_agent.state import InvestigationAgentState
 from agents.investigation_agent.tools import _active_case_id
 from prompts.investigation_prompts import SYSTEM_PROMPT as _SYSTEM_PROMPT
+from utils.pii_masking import mask_id, mask_free_text
 
 _MERCHANT_CATS = {"Merchant Dispute", "Refund Not Received", "Product Not Received", "Subscription Abuse"}
 
@@ -140,17 +141,19 @@ def _build_human_message(a1: dict, tool_results: dict) -> str:
         if name in tool_results:
             tool_section += f"\n### {name}\n{tool_results[name]}\n"
 
+    masked_intent = mask_free_text(a1.get("customer_intent_summary", "N/A"))
+
     return (
         "## Agent 1 Classification Output\n"
-        f"Case ID              : {a1.get('case_id', 'N/A')}\n"
-        f"Customer ID          : {a1.get('customer_id', 'N/A')}\n"
-        f"Transaction ID       : {a1.get('transaction_id', 'N/A')}\n"
+        f"Case ID              : {mask_id(a1.get('case_id', 'N/A'))}\n"
+        f"Customer ID          : {mask_id(a1.get('customer_id', 'N/A'))}\n"
+        f"Transaction ID       : {mask_id(a1.get('transaction_id', 'N/A'), prefix_chars=8)}\n"
         f"Merchant             : {a1.get('merchant', 'N/A')}\n"
         f"Amount               : {a1.get('currency', 'INR')} {a1.get('amount', 0)}\n"
         f"Dispute Category     : {a1.get('dispute_category', 'N/A')}\n"
         f"Fraud Suspicion      : {a1.get('fraud_suspicion', False)}\n"
         f"Confidence Score     : {a1.get('confidence_score', 0.0)}\n"
         f"Risk Tags            : {tags_str}\n"
-        f"Customer Intent      : {a1.get('customer_intent_summary', 'N/A')}\n"
+        f"Customer Intent      : {masked_intent}\n"
         + tool_section
     )

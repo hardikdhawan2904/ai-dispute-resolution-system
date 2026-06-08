@@ -1,62 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { UseFormReturn, Controller } from "react-hook-form";
-import {
-  CreditCard,
-  Zap,
-  Landmark,
-  Store,
-  Banknote,
-  ShoppingCart,
-  Globe,
-  Smartphone,
-  Check,
-  Info,
-  AlertCircle,
-} from "lucide-react";
-import { FormValues, TX_TYPES, TxType } from "../schema";
+import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { FormValues } from "../schema";
 import { TxConfig, ExtraField } from "../config";
-import { FInput, FSelect, FToggle, FMaskedDigits, Panel, SubSection } from "./FormControls";
-import { TX_CONFIG } from "../config";
+import { FInput, FSelect, FToggle, FMaskedDigits, Panel, SubSection, InfoBanner } from "./FormControls";
+import { lookupTransaction } from "@/lib/api";
 
-// ── Icon + metadata maps ───────────────────────────────────────────────────────
-
-const TX_ICONS: Record<TxType, React.ComponentType<{ className?: string }>> = {
-  "Credit Card":      CreditCard,
-  "Debit Card":       CreditCard,
-  "UPI":              Zap,
-  "Net Banking":      Landmark,
-  "Wallet":           Smartphone,
-  "POS":              Store,
-  "ATM":              Banknote,
-  "Online Purchase":  ShoppingCart,
-  "International":    Globe,
-};
-
-const TX_META: Record<TxType, { title: string; description: string }> = {
-  "Credit Card":     { title: "Credit Card",            description: "Online, POS, recurring subscription and international card transactions" },
-  "Debit Card":      { title: "Debit Card",             description: "ATM withdrawals, POS purchases and debit-based payments" },
-  "UPI":             { title: "UPI Transfer",           description: "Instant account-to-account transfers via UPI apps and QR payments" },
-  "Net Banking":     { title: "Net Banking",            description: "NEFT, RTGS, IMPS and online banking fund transfers" },
-  "Wallet":          { title: "Digital Wallet",         description: "Wallet-based transactions through payment apps and stored balances" },
-  "POS":             { title: "POS Transaction",        description: "Point-of-sale terminal transactions using physical cards" },
-  "ATM":             { title: "ATM Withdrawal",         description: "Cash withdrawals, failed withdrawals and ATM debit disputes" },
-  "Online Purchase": { title: "Online Purchase",        description: "E-commerce orders, merchant disputes and delivery-related issues" },
-  "International":   { title: "International",          description: "Cross-border transactions and foreign merchant payments" },
-};
-
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
-function AdvisoryNote({ text }: { text: string }) {
-  return (
-    <div className="flex items-start gap-2 pt-3 mt-1 border-t border-gray-100">
-      <Info className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" />
-      <p className="text-[11px] text-gray-500 leading-relaxed">{text}</p>
-    </div>
-  );
-}
-
-// ── Dynamic field renderer ─────────────────────────────────────────────────────
+// ── Dynamic field renderer (type-specific metadata) ────────────────────────────
 
 function DynamicField({
   field,
@@ -157,8 +109,38 @@ interface Step2Props {
 }
 
 export default function Step2({ form, config }: Step2Props) {
-  const { register, control, watch, setValue, formState: { errors } } = form;
-  const txType = watch("transaction_type");
+  const { register, setValue, watch, formState: { errors } } = form;
+  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found">("idle");
+
+  const transactionId = watch("transaction_id");
+  const txType        = watch("transaction_type");
+
+  async function handleTransactionIdBlur() {
+    const id = transactionId?.trim();
+    if (!id) return;
+
+    setLookupState("loading");
+    const txn = await lookupTransaction(id);
+
+    if (txn) {
+      setValue("merchant",          txn.merchant_name,              { shouldValidate: true });
+      setValue("amount",            txn.amount,                     { shouldValidate: true });
+      setValue("currency",          txn.currency || "INR",          { shouldValidate: false });
+      setValue("transaction_type",  txn.transaction_type,           { shouldValidate: true });
+      const datePart = txn.transaction_date ? txn.transaction_date.split("T")[0] : "";
+      setValue("transaction_date",  datePart,                       { shouldValidate: true });
+      if (txn.transaction_date?.includes("T")) {
+        setValue("transaction_time", txn.transaction_date.split("T")[1]?.substring(0, 5) || "", { shouldValidate: false });
+      }
+      setLookupState("found");
+    } else {
+      setValue("merchant",          "");
+      setValue("amount",            0  as unknown as number);
+      setValue("transaction_type",  "" as TxType);
+      setValue("transaction_date",  "");
+      setLookupState("not_found");
+    }
+  }
 
   const toggleFields    = config?.extraFields.filter((f) => f.type === "toggle") ?? [];
   const nonToggleFields = config?.extraFields.filter((f) => f.type !== "toggle") ?? [];
@@ -166,146 +148,105 @@ export default function Step2({ form, config }: Step2Props) {
   return (
     <div className="space-y-4">
 
-      {/* ── Transaction Type Grid ──────────────────────────────────────────── */}
-      <Panel label="Select Transaction Type *">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {TX_TYPES.map((type) => {
-            const Icon     = TX_ICONS[type];
-            const meta     = TX_META[type];
-            const selected = txType === type;
-
-            return (
-              <button
-                key={type}
-                type="button"
-                onClick={() => setValue("transaction_type", type, { shouldValidate: true })}
-                className={[
-                  "group relative flex flex-col items-start p-3.5 rounded border text-left",
-                  "transition-colors duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
-                  selected
-                    ? "border-blue-400 bg-blue-50"
-                    : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50",
-                ].join(" ")}
-              >
-                {selected && (
-                  <span className="absolute top-2 right-2 w-3.5 h-3.5 rounded-full bg-blue-500 flex items-center justify-center">
-                    <Check className="w-2 h-2 text-white" strokeWidth={3} />
-                  </span>
-                )}
-
-                {/* Icon */}
-                <div
-                  className={[
-                    "w-8 h-8 rounded-md flex items-center justify-center mb-3 transition-colors duration-100",
-                    selected
-                      ? "bg-blue-500"
-                      : "bg-gray-100 group-hover:bg-gray-200",
-                  ].join(" ")}
-                >
-                  <Icon className={`w-4 h-4 ${selected ? "text-white" : "text-gray-500"}`} />
-                </div>
-
-                {/* Label */}
-                <span className={`text-xs font-semibold leading-tight ${selected ? "text-blue-800" : "text-gray-800"}`}>
-                  {meta.title}
-                </span>
-
-                <span className="hidden sm:block text-[11px] text-gray-400 mt-1 leading-relaxed line-clamp-2">
-                  {meta.description}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {errors.transaction_type && (
-          <p className="mt-3 flex items-center gap-1.5 text-xs text-red-500">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            {errors.transaction_type.message}
-          </p>
-        )}
-      </Panel>
-
-      {/* ── Core Transaction Details ───────────────────────────────────────── */}
+      {/* ── Transaction Lookup ─────────────────────────────────────────────── */}
       <Panel label="Transaction Details">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FInput
-            label="Transaction ID"
-            required
-            placeholder="TXN-XXXXXXXXXX"
-            error={errors.transaction_id?.message}
-            {...register("transaction_id")}
-          />
-          <FInput
-            label="Merchant / Payee"
-            required
-            placeholder="Amazon, Zomato, HDFC Bank…"
-            error={errors.merchant?.message}
-            {...register("merchant")}
-          />
-
-          {/* Amount with currency selector */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">
-              Amount <span className="text-red-500">*</span>
-            </label>
-            <div className="flex">
-              <Controller
-                control={control}
-                name="currency"
-                render={({ field }) => (
-                  <select
-                    value={field.value}
-                    onChange={(e) => field.onChange(e.target.value)}
-                    className="border border-r-0 border-gray-200 rounded-l-lg px-2.5 py-2.5 text-sm bg-gray-50 text-gray-600 focus:outline-none font-mono"
-                  >
-                    {["INR", "USD", "EUR", "GBP", "AED"].map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                )}
-              />
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="0.00"
-                {...register("amount")}
-                className={[
-                  "flex-1 border rounded-r-lg px-3 py-2.5 text-sm text-gray-900 font-mono",
-                  "focus:outline-none focus:ring-2 transition-colors",
-                  errors.amount
-                    ? "border-red-400 bg-red-50/50 focus:ring-red-500/20"
-                    : "border-gray-200 focus:ring-blue-500/20 focus:border-blue-500",
-                ].join(" ")}
-              />
-            </div>
-            {errors.amount && (
-              <p className="text-xs text-red-500 mt-1">{errors.amount.message}</p>
+        <div className="space-y-4">
+          {/* Transaction ID */}
+          <div className="relative">
+            <FInput
+              label="Transaction ID"
+              required
+              placeholder="TXN-XXXXXXXXXX"
+              error={errors.transaction_id?.message}
+              {...register("transaction_id")}
+              onBlur={handleTransactionIdBlur}
+            />
+            {lookupState === "loading" && (
+              <div className="absolute right-3 top-8 flex items-center gap-1.5 text-xs text-gray-400">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Looking up…
+              </div>
+            )}
+            {lookupState === "found" && (
+              <div className="absolute right-3 top-8 flex items-center gap-1.5 text-xs text-green-500">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Transaction found
+              </div>
+            )}
+            {lookupState === "not_found" && (
+              <div className="absolute right-3 top-8 flex items-center gap-1.5 text-xs text-red-500">
+                <XCircle className="w-3.5 h-3.5" />
+                Transaction not found — check your Transaction ID
+              </div>
             )}
           </div>
 
-          <FInput
-            label="Transaction Date"
-            required
-            type="date"
-            error={errors.transaction_date?.message}
-            {...register("transaction_date")}
-          />
-          <FInput
-            label="Transaction Time"
-            type="time"
-            help="Approximate time if exact is unknown"
-            {...register("transaction_time")}
-          />
+          {/* Read-only fields — always populated from DB */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FInput
+              label="Transaction Type"
+              required
+              placeholder="Loaded from your transaction record"
+              error={errors.transaction_type?.message}
+              readOnly
+              className="bg-gray-50 cursor-not-allowed"
+              {...register("transaction_type")}
+            />
+
+            <FInput
+              label="Merchant / Payee"
+              required
+              placeholder="Loaded from your transaction record"
+              error={errors.merchant?.message}
+              readOnly
+              className="bg-gray-50 cursor-not-allowed"
+              {...register("merchant")}
+            />
+
+            {/* Amount with currency */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                Amount <span className="text-red-500">*</span>
+              </label>
+              <div className="flex">
+                <span className="border border-r-0 border-gray-200 rounded-l-lg px-3 py-2.5 text-sm bg-gray-100 text-gray-500 font-mono select-none">
+                  {watch("currency") || "INR"}
+                </span>
+                <input
+                  type="number"
+                  readOnly
+                  tabIndex={-1}
+                  {...register("amount")}
+                  className="flex-1 border border-gray-200 rounded-r-lg px-3 py-2.5 text-sm text-gray-700 font-mono bg-gray-50 cursor-not-allowed focus:outline-none"
+                />
+              </div>
+              {errors.amount && (
+                <p className="text-xs text-red-500 mt-1">{errors.amount.message}</p>
+              )}
+            </div>
+
+            <FInput
+              label="Transaction Date"
+              required
+              type="date"
+              readOnly
+              className="bg-gray-50 cursor-not-allowed"
+              error={errors.transaction_date?.message}
+              {...register("transaction_date")}
+            />
+          </div>
+
+          <InfoBanner>
+            Enter your Transaction ID to load the transaction details automatically.
+            These fields are sourced from bank records and cannot be edited.
+          </InfoBanner>
         </div>
       </Panel>
 
       {/* ── Type-Specific Metadata ─────────────────────────────────────────── */}
       {config && txType && (
-        <Panel label={`${txType} — Metadata`}>
+        <Panel label={`${txType} — Additional Details`}>
           <div className="space-y-5">
-
             {nonToggleFields.length > 0 && (
               <SubSection label="Transaction Metadata">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -328,11 +269,12 @@ export default function Step2({ form, config }: Step2Props) {
               </SubSection>
             )}
 
-            <AdvisoryNote text={config.contextHelp} />
+            <div className="flex items-start gap-2 pt-3 mt-1 border-t border-gray-100">
+              <p className="text-[11px] text-gray-500 leading-relaxed">{config.contextHelp}</p>
+            </div>
           </div>
         </Panel>
       )}
-
     </div>
   );
 }

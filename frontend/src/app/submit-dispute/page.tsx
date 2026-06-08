@@ -28,9 +28,10 @@ const STEPS = [
   {
     id: 2,
     label: "Transaction",
+    // transaction_type / merchant / amount / transaction_date are auto-filled from DB lookup;
+    // validating them here ensures the user cannot advance without a successful lookup.
     fields: [
       "transaction_id",
-      "transaction_type",
       "merchant",
       "amount",
       "transaction_date",
@@ -93,7 +94,7 @@ export default function SubmitDisputePage() {
   });
 
   const txType   = form.watch("transaction_type");
-  const txConfig = txType ? TX_CONFIG[txType] : null;
+  const txConfig = txType ? ((TX_CONFIG as Record<string, typeof TX_CONFIG[keyof typeof TX_CONFIG]>)[txType] ?? null) : null;
 
   const completedSteps = Array.from({ length: step - 1 }, (_, i) => i + 1);
 

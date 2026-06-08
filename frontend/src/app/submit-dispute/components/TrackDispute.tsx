@@ -205,7 +205,7 @@ export default function TrackDispute({ initialCaseId }: TrackDisputeProps) {
               type="text"
               value={caseInput}
               onChange={(e) => setCaseInput(e.target.value.toUpperCase())}
-              placeholder="e.g. DISP-20260527-XXXX"
+              placeholder="e.g. CASE-000527"
               spellCheck={false}
               className="flex-1 border border-gray-200 rounded px-3 py-2 text-sm font-mono text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
             />

@@ -34,6 +34,7 @@ _UPLOAD_ROOT        = Path("uploads")
 async def submit_dispute_public(
     payload: str = Form(...),
     files: List[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
 ):
     """
     Public dispute submission — accepts form data + optional evidence files in one request.
@@ -43,9 +44,45 @@ async def submit_dispute_public(
     Broadcasts DISPUTE_QUEUED immediately, then ANALYSIS_COMPLETE after the pipeline finishes.
     """
     from utils.extractor import extract_text
+    from database.models import BankCustomer, Transaction
 
     data = DisputeSubmissionRequest.model_validate_json(payload).model_dump()
-    case_id = generate_case_id()
+
+    # Always resolve customer details from the DB — never trust form-submitted values.
+    customer = db.query(BankCustomer).filter(
+        BankCustomer.customer_id == data["customer_id"].upper()
+    ).first()
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Customer '{data['customer_id']}' not found",
+        )
+    data["customer_name"] = customer.full_name
+    data["email"] = customer.email
+    data["phone"] = customer.phone
+
+    # Always resolve transaction details from the DB — never trust form-submitted values.
+    txn = db.query(Transaction).filter(
+        Transaction.transaction_id == data["transaction_id"].upper()
+    ).first()
+    if not txn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transaction '{data['transaction_id']}' not found",
+        )
+    if txn.customer_id.upper() != data["customer_id"].upper():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Transaction does not belong to this customer",
+        )
+    data["merchant"]          = txn.merchant_name
+    data["amount"]            = txn.amount
+    data["currency"]          = txn.currency
+    data["transaction_type"]  = txn.transaction_type
+    data["transaction_date"]  = txn.transaction_date.strftime("%Y-%m-%d") if txn.transaction_date else ""
+    data["transaction_time"]  = txn.transaction_date.strftime("%H:%M") if txn.transaction_date else ""
+
+    case_id = generate_case_id(db)
 
     await ws_manager.broadcast({
         "type":          "DISPUTE_QUEUED",

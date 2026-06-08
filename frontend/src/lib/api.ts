@@ -84,6 +84,28 @@ export async function lookupCustomer(customerId: string): Promise<BankCustomer |
   }
 }
 
+export interface BankTransaction {
+  transaction_id:   string;
+  customer_id:      string;
+  merchant_name:    string;
+  amount:           number;
+  currency:         string;
+  transaction_type: string;
+  transaction_date: string | null;
+  status:           string;
+}
+
+export async function lookupTransaction(transactionId: string): Promise<BankTransaction | null> {
+  try {
+    const res = await api.get<BankTransaction>(
+      `/api/customer/lookup/transaction/${transactionId.toUpperCase()}`
+    );
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
 // ── Internal bank disputes ────────────────────────────────────────────────────
 
 export async function submitDispute(data: DisputeSubmissionInput): Promise<DisputeSubmissionResponse> {

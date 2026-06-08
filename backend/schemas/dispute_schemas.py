@@ -70,42 +70,32 @@ RiskTag = Literal[
 class DisputeSubmissionRequest(BaseModel):
     """Intake form payload from the banking portal."""
 
-    customer_name: str = Field(..., min_length=2, max_length=256, description="Full name of the customer")
+    # customer_name, email, phone are optional here — the backend always overwrites
+    # them from BankCustomer so the DB is the single source of truth.
     customer_id: str = Field(..., min_length=4, max_length=64, description="Bank customer identifier")
-    email: str = Field(..., description="Customer email address")
-    phone: str = Field(default="", description="Customer phone number")
+    customer_name: Optional[str] = Field(default=None, max_length=256, description="Ignored — filled from DB")
+    email: Optional[str] = Field(default=None, description="Ignored — filled from DB")
+    phone: Optional[str] = Field(default=None, description="Ignored — filled from DB")
 
     transaction_id: str = Field(..., min_length=4, max_length=128, description="Bank transaction reference")
-    transaction_type: TransactionType = Field(..., description="Type of the disputed transaction")
-    merchant: str = Field(..., min_length=1, max_length=256, description="Merchant or payee name")
-    amount: float = Field(..., gt=0, description="Transaction amount")
-    currency: str = Field(default="INR", max_length=8, description="ISO 4217 currency code")
-    transaction_date: str = Field(..., description="Date of the transaction (YYYY-MM-DD)")
-    transaction_time: str = Field(default="", description="Time of transaction (HH:MM)")
+    # Fields below are ignored from form — backend always overwrites from transactions table.
+    transaction_type: Optional[str]  = Field(default=None, description="Ignored — filled from DB")
+    merchant:         Optional[str]  = Field(default=None, max_length=256, description="Ignored — filled from DB")
+    amount:           Optional[float] = Field(default=None, description="Ignored — filled from DB")
+    currency:         str = Field(default="INR", max_length=8, description="ISO 4217 currency code")
+    transaction_date: Optional[str]  = Field(default=None, description="Ignored — filled from DB")
+    transaction_time: Optional[str]  = Field(default=None, description="Ignored — filled from DB")
 
     customer_comment: str = Field(..., min_length=10, max_length=2000, description="Customer's free-text complaint")
     dispute_reason: str = Field(..., min_length=5, max_length=512, description="Primary dispute reason")
     fraud_selected: bool = Field(default=False, description="Customer checked the 'Fraud' option")
     transaction_metadata: Optional[dict] = Field(default=None, description="Type-specific transaction metadata (card digits, UTR, UPI ID, etc.)")
 
-    @field_validator("email")
-    @classmethod
-    def validate_email(cls, v: str) -> str:
-        if not re.match(r"[^@]+@[^@]+\.[^@]+", v):
-            raise ValueError("Invalid email address")
-        return v.lower().strip()
-
-    @field_validator("phone")
-    @classmethod
-    def validate_phone(cls, v: str) -> str:
-        digits = re.sub(r"\D", "", v)
-        if len(digits) < 10:
-            raise ValueError("Phone number must have at least 10 digits")
-        return v.strip()
-
     @field_validator("amount")
     @classmethod
-    def validate_amount(cls, v: float) -> float:
+    def validate_amount(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
         if v <= 0 or v > 100_000_000:
             raise ValueError("Amount must be between 0 and 100,000,000")
         return round(v, 2)

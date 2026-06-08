@@ -38,13 +38,11 @@ export default function Step1({ form }: Step1Props) {
     }
   }
 
-  const filled = lookupState === "found";
-
   return (
     <div className="space-y-4">
       <SectionCard
         title="Customer Details"
-        subtitle="Enter your Customer ID to auto-fill your registered account information"
+        subtitle="Enter your Customer ID to load your registered account information"
       >
         <div className="space-y-4">
           {/* Customer ID with lookup */}
@@ -73,19 +71,20 @@ export default function Step1({ form }: Step1Props) {
               {lookupState === "not_found" && (
                 <div className="absolute right-3 top-8 flex items-center gap-1.5 text-xs text-red-500">
                   <XCircle className="w-3.5 h-3.5" />
-                  Customer not found
+                  Customer not found — please check your Customer ID
                 </div>
               )}
             </div>
           </div>
 
+          {/* Always read-only — populated from DB via lookup, never user-editable */}
           <FInput
             label="Full Name"
             required
-            placeholder="Auto-filled from Customer ID"
+            placeholder="Loaded from your bank record"
             error={errors.customer_name?.message}
-            readOnly={filled}
-            className={filled ? "bg-gray-50 cursor-not-allowed" : ""}
+            readOnly
+            className="bg-gray-50 cursor-not-allowed"
             {...register("customer_name")}
           />
 
@@ -94,20 +93,20 @@ export default function Step1({ form }: Step1Props) {
               label="Email Address"
               required
               type="email"
-              placeholder="Auto-filled from Customer ID"
+              placeholder="Loaded from your bank record"
               error={errors.email?.message}
-              readOnly={filled}
-              className={filled ? "bg-gray-50 cursor-not-allowed" : ""}
+              readOnly
+              className="bg-gray-50 cursor-not-allowed"
               {...register("email")}
             />
             <FInput
               label="Phone Number"
               required
               type="tel"
-              placeholder="Auto-filled from Customer ID"
+              placeholder="Loaded from your bank record"
               error={errors.phone?.message}
-              readOnly={filled}
-              className={filled ? "bg-gray-50 cursor-not-allowed" : ""}
+              readOnly
+              className="bg-gray-50 cursor-not-allowed"
               {...register("phone")}
             />
           </div>

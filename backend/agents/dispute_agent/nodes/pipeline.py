@@ -25,6 +25,7 @@ from agents.dispute_agent.tools import TOOL_REGISTRY
 from prompts.dispute_prompts import SYSTEM_PROMPT, DISPUTE_DATA_TEMPLATE
 from utils.helpers import extract_json_from_text, utc_now_iso, generate_case_id
 from utils.logger import agent_logger, log_workflow_event
+from utils.pii_masking import mask_name, mask_id, mask_document, mask_free_text
 
 # ── LLM + tools + agent identity (all sourced from agent.yaml) ───────────────
 _cfg        = get_llm_config()
@@ -86,6 +87,9 @@ def build_evidence_node(state: DisputeAgentState) -> dict:
     else:
         document_section = "No documents attached."
 
+    # ── Mask PII from free-text fields before anything reaches the LLM ─────────
+    masked_comment = mask_free_text(d.get("customer_comment", ""))
+
     # ── Pre-compute all tools server-side (eliminates ReAct LLM round-trips) ─
     from agents.dispute_agent.tools import (
         assess_transaction_context, score_fraud_indicators, verify_evidence_match,
@@ -98,7 +102,7 @@ def build_evidence_node(state: DisputeAgentState) -> dict:
         "transaction_time":  d.get("transaction_time", ""),
     })
     fraud_score = score_fraud_indicators.invoke({
-        "customer_comment":   d.get("customer_comment", ""),
+        "customer_comment":   masked_comment,
         "otp_received":       yn(meta.get("otp_received")),
         "otp_shared":         yn(meta.get("otp_shared")),
         "bank_impersonation": yn(meta.get("bank_impersonation")),
@@ -115,7 +119,7 @@ def build_evidence_node(state: DisputeAgentState) -> dict:
             "document_text":      document_section[:3000],
             "claimed_amount":     str(d.get("amount", "")),
             "claimed_merchant":   d.get("merchant", ""),
-            "dispute_description": (d.get("customer_comment", "") or "")[:500],
+            "dispute_description": masked_comment[:500],
         })
     else:
         evidence_result = "EVIDENCE VERIFICATION\n  Verdict              : NO_DOCUMENTS\n  Evidence Match       : null\n  Note                 : No documents were submitted with this dispute."
@@ -127,10 +131,12 @@ def build_evidence_node(state: DisputeAgentState) -> dict:
         f"### verify_evidence_match\n{evidence_result}\n"
     )
 
+    masked_document_section = mask_document(document_section)
+
     # Build initial messages — LLM receives all tool outputs, produces JSON in one call
     human_content = DISPUTE_DATA_TEMPLATE.format(
-        customer_name    = d.get("customer_name", "N/A"),
-        customer_id      = d.get("customer_id", "N/A"),
+        customer_name    = mask_name(d.get("customer_name", "N/A")),
+        customer_id      = mask_id(d.get("customer_id", "N/A")),
         transaction_type = d.get("transaction_type", "N/A"),
         merchant         = d.get("merchant", "N/A"),
         amount           = d.get("amount", 0),
@@ -139,10 +145,10 @@ def build_evidence_node(state: DisputeAgentState) -> dict:
         transaction_time = d.get("transaction_time", "N/A"),
         dispute_reason   = d.get("dispute_reason", "N/A"),
         fraud_selected   = d.get("fraud_selected", False),
-        customer_comment = d.get("customer_comment", ""),
+        customer_comment = masked_comment,
         supporting_evidence = supporting_evidence,
-        document_section = document_section,
-        case_id          = state["case_id"],
+        document_section = masked_document_section,
+        case_id          = mask_id(state["case_id"]),
         created_at       = utc_now_iso(),
     ) + tool_results_section
 

@@ -8,11 +8,20 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 
-def generate_case_id() -> str:
-    """Generate a unique, human-readable BFSI case ID."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    short_uuid = str(uuid.uuid4()).replace("-", "").upper()[:8]
-    return f"CASE-{timestamp}-{short_uuid}"
+def generate_case_id(db=None) -> str:
+    """Generate a sequential BFSI case ID — CASE-000527, CASE-000528, …"""
+    if db is not None:
+        from sqlalchemy import text
+        n = db.execute(text("SELECT nextval('dispute_case_seq')")).scalar()
+        return f"CASE-{n:06d}"
+    # fallback when no db session available (should rarely be hit)
+    from sqlalchemy import text, create_engine
+    import os
+    _engine = create_engine(os.environ["DATABASE_URL"])
+    with _engine.connect() as conn:
+        n = conn.execute(text("SELECT nextval('dispute_case_seq')")).scalar()
+        conn.commit()
+    return f"CASE-{n:06d}"
 
 
 def utc_now_iso() -> str:

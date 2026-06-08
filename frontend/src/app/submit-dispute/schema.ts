@@ -37,7 +37,7 @@ export const formSchema = z.object({
 
   phone: z
     .string()
-    .regex(/^\d{10}$/, "Enter a valid 10-digit phone number"),
+    .min(1, "Phone number is required"),
 
   // ── Step 2 — Transaction Details ──────────────────────────────────────────
   transaction_id: z
@@ -48,35 +48,19 @@ export const formSchema = z.object({
       "Transaction ID must be alphanumeric (e.g. TXN-00007525)"
     ),
 
-  transaction_type: z.enum(TX_TYPES, {
-    required_error: "Select a transaction type",
-  }),
+  // transaction_type, merchant, amount, transaction_date are auto-filled from DB via lookup.
+  // They remain required so the form blocks advancing if the transaction lookup has not succeeded.
+  transaction_type: z.string().min(1, "Transaction type is required"),
 
-  merchant: z
-    .string()
-    .min(1, "Merchant / payee name is required")
-    .max(100, "Merchant name is too long")
-    .regex(
-      /^(?=.*[a-zA-Z])[a-zA-Z0-9\s.,&'()\-]{1,100}$/,
-      "Merchant name must contain at least one letter and no special symbols"
-    ),
+  merchant: z.string().min(1, "Merchant / payee name is required"),
 
   amount: z.coerce
     .number({ invalid_type_error: "Enter a valid amount" })
-    .positive("Amount must be greater than 0")
-    .max(10_000_000, "Amount cannot exceed ₹1,00,00,000"),
+    .positive("Amount must be greater than 0"),
 
   currency: z.string().default("INR"),
 
-  transaction_date: z
-    .string()
-    .min(1, "Transaction date is required")
-    .refine((d) => {
-      const date = new Date(d);
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      return date >= new Date("2000-01-01") && date <= today;
-    }, "Date must be between 2000 and today"),
+  transaction_date: z.string().min(1, "Transaction date is required"),
 
   transaction_time: z.string().optional(),
 

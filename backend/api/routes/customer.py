@@ -21,6 +21,18 @@ from utils.logger import api_logger
 router = APIRouter(prefix="/api/customer", tags=["Customer Portal"])
 
 
+@router.get("/lookup/transaction/{transaction_id}")
+def lookup_transaction(transaction_id: str, db: Session = Depends(get_db)):
+    """Public endpoint — returns transaction details for form pre-fill."""
+    from database.models import Transaction
+    txn = db.query(Transaction).filter(
+        Transaction.transaction_id == transaction_id.upper()
+    ).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return txn.to_dict()
+
+
 @router.get("/lookup/{customer_id}")
 def lookup_customer(customer_id: str, db: Session = Depends(get_db)):
     """Public endpoint — returns basic customer info for form pre-fill."""
@@ -45,7 +57,36 @@ def customer_submit_dispute(
     """Customer raises a new dispute — they receive only a safe confirmation."""
     api_logger.info("Customer dispute submission", extra={"customer_id": user.get("customer_id")})
 
-    result = DisputeService.submit_dispute(payload.model_dump(), db)
+    from database.models import Transaction
+
+    # Always resolve customer details from the DB — never trust form-submitted values.
+    customer = db.query(BankCustomer).filter(
+        BankCustomer.customer_id == payload.customer_id.upper()
+    ).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    # Always resolve transaction details from the DB — never trust form-submitted values.
+    txn = db.query(Transaction).filter(
+        Transaction.transaction_id == payload.transaction_id.upper()
+    ).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if txn.customer_id.upper() != payload.customer_id.upper():
+        raise HTTPException(status_code=403, detail="Transaction does not belong to this customer")
+
+    data = payload.model_dump()
+    data["customer_name"]     = customer.full_name
+    data["email"]             = customer.email
+    data["phone"]             = customer.phone
+    data["merchant"]          = txn.merchant_name
+    data["amount"]            = txn.amount
+    data["currency"]          = txn.currency
+    data["transaction_type"]  = txn.transaction_type
+    data["transaction_date"]  = txn.transaction_date.strftime("%Y-%m-%d") if txn.transaction_date else ""
+    data["transaction_time"]  = txn.transaction_date.strftime("%H:%M") if txn.transaction_date else ""
+
+    result = DisputeService.submit_dispute(data, db)
 
     if not result["success"]:
         raise HTTPException(
