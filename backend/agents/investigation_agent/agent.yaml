@@ -26,7 +26,6 @@ agent:
   constraints:
     - Never reclassify or override Agent 1 dispute_category
     - Never give legal or financial advice
-    - Always call recommend_documents for every dispute
     - If a tool fails, continue investigation and note the failure
     - Express uncertainty via a lower confidence_score — never suppress it
     - Return ONLY valid parseable JSON — no prose, no markdown
@@ -55,7 +54,6 @@ agent:
         - check_merchant_risk
         - find_duplicate_transaction
         - lookup_related_cases
-        - recommend_documents
 
   # ── Tools ────────────────────────────────────────────────────────────────────
   tools:
@@ -78,11 +76,6 @@ agent:
       description: Finds historical cases with the same dispute_category and returns resolution outcome statistics.
       inputs: [dispute_category: string, merchant: string (optional)]
       output: related case resolution statistics
-
-    - name: recommend_documents
-      description: Returns the required documents list based on dispute_category, fraud_suspicion, and risk_tags.
-      inputs: [dispute_category: string, fraud_suspicion: bool, risk_tags: string]
-      output: list of required documents
 
   # ── Output schema ─────────────────────────────────────────────────────────────
   output:

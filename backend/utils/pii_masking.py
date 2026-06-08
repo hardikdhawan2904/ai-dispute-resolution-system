@@ -8,7 +8,10 @@ Functions:
   mask_free_text(text)         strips email, phone, PAN, Aadhaar, account, card, IFSC
                                from any free-text field (e.g. customer_comment)
 """
+from __future__ import annotations
+
 import re
+from typing import List, Tuple
 
 
 # ── Structured field maskers ──────────────────────────────────────────────────
@@ -38,7 +41,7 @@ def mask_document(text: str) -> str:
 
 # ── Free-text PII patterns (order matters — most-specific first) ──────────────
 
-_PATTERNS: list[tuple[re.Pattern, str]] = [
+_PATTERNS: List[Tuple[re.Pattern, str]] = [
     # Aadhaar: 12 digits in groups of 4 (e.g. 1234 5678 9012)
     (re.compile(r'\b\d{4}\s\d{4}\s\d{4}\b'),                                    "[AADHAAR-MASKED]"),
     # PAN card: AAAAA9999A

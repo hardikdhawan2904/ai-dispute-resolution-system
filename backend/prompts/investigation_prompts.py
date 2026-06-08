@@ -21,20 +21,23 @@ Your job is to BUILD AN INVESTIGATION PLAN by:
 - check_merchant_risk        → merchant's complaint history, fraud rate, blacklist status
 - find_duplicate_transaction → detect if this transaction was already disputed
 - lookup_related_cases       → historical resolution statistics for this dispute type
-- recommend_documents        → required document checklist for this dispute category
+
+NOTE: required_documents is pre-computed and provided in the input — copy it exactly into your JSON output.
 
 ## Pre-Computed Tool Results
 All 5 investigation tools have already been executed server-side. Their results appear at
 the end of this message under "PRE-COMPUTED TOOL RESULTS".
 DO NOT call any tools — synthesise the provided results and produce your final JSON directly.
 
-## Queue Assignment Logic
-CRITICAL_QUEUE  → fraud_suspicion=true AND amount > 50000, OR identity theft / SIM swap signals
-FRAUD_QUEUE     → fraud_suspicion=true
-HIGH_VALUE_QUEUE → amount > 50000 and fraud_suspicion=false
-MERCHANT_QUEUE  → Merchant Dispute, Refund Not Received, Product Not Received, Subscription Abuse (no fraud)
-ATM_QUEUE       → ATM Cash Issue
-STANDARD_QUEUE  → everything else
+## Queue Assignment Logic (Indian Banking Standard)
+FRAUD_OPS        → fraud confirmed by AI AND customer; or fraud + amount > ₹10,000
+UPI_FRAUD        → UPI transaction with fraud suspicion (NPCI dispute process)
+CHARGEBACK_TEAM  → Credit/Debit Card: Unauthorized, Duplicate, or Friendly Fraud
+ATM_INVESTIGATION → ATM Cash Issue (RBI mandated 7 working-day TAT)
+COMPLIANCE_REVIEW → VELOCITY_BREACH, SUSPICIOUS_BEHAVIOR, MERCHANT_BLACKLISTED tags
+SENIOR_ANALYST   → High-value non-fraud (amount > ₹2,00,000) — requires senior sign-off
+MERCHANT_DISPUTES → Merchant Dispute, Refund Not Received, Product Not Received, Subscription Abuse
+GENERAL          → All other standard disputes
 
 ## Queue Confidence Scoring
 Assign queue_confidence as a float 0.0–1.0 reflecting how certain you are the recommended queue is correct.
@@ -68,7 +71,7 @@ After calling all relevant tools, respond with ONLY this JSON object — no pros
 
 {
   "case_id": "<from input>",
-  "recommended_queue": "CRITICAL_QUEUE | FRAUD_QUEUE | HIGH_VALUE_QUEUE | MERCHANT_QUEUE | ATM_QUEUE | STANDARD_QUEUE",
+  "recommended_queue": "FRAUD_OPS | UPI_FRAUD | CHARGEBACK_TEAM | ATM_INVESTIGATION | COMPLIANCE_REVIEW | SENIOR_ANALYST | MERCHANT_DISPUTES | GENERAL",
   "queue_confidence": <float 0.0-1.0>,
   "queue_confidence_factors": [
     "<human-readable sentence grounded in a specific tool output>",
@@ -132,7 +135,7 @@ Note: investigation_coverage is computed server-side from tool execution records
 - merchant_risk_profile: populate from check_merchant_risk result. If not called, set merchant_risk to "NOT_ASSESSED".
 - duplicate_found: true only if find_duplicate_transaction returned a match.
 - related_case_id: the case_id of the duplicate if found, else null.
-- required_documents: exact list from recommend_documents tool.
+- required_documents: copy exactly from the "REQUIRED DOCUMENTS" section in the input — do not modify or generate your own list.
 - recommended_steps: 3-5 concrete, ordered investigation actions specific to this case.
 - investigation_reasoning: 3-6 factual statements derived ONLY from actual tool outputs. No fabrication.
   Each item is one finding. Order by importance. Example items:

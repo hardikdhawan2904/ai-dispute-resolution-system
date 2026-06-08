@@ -95,6 +95,22 @@ export interface BankTransaction {
   status:           string;
 }
 
+export async function getDocumentRequirements(
+  disputeReason: string,
+  fraudSelected: boolean,
+  amount: number,
+): Promise<{ category: string; required_documents: string[] } | null> {
+  try {
+    const res = await api.get<{ category: string; required_documents: string[] }>(
+      "/api/disputes/document-requirements",
+      { params: { dispute_reason: disputeReason, fraud_selected: fraudSelected, amount } },
+    );
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
 export async function lookupTransaction(transactionId: string): Promise<BankTransaction | null> {
   try {
     const res = await api.get<BankTransaction>(

@@ -41,6 +41,10 @@ class DisputeWorkflowState(TypedDict):
     validation_errors: List[str]
     validation_warnings: List[str]
 
+    # Document gate
+    documents_sufficient: bool
+    required_documents: List[str]
+
     # AI analysis
     ai_analysis: Optional[dict]
 
@@ -156,6 +160,111 @@ def validation_node(state: DisputeWorkflowState) -> dict:
         "current_stage": node,
         "execution_trace": _trace(node, start, passed, f"passed={passed}, errors={len(errors)}"),
         "error_message": "; ".join(errors) if errors else None,
+    }
+
+
+def document_check_node(state: DisputeWorkflowState) -> dict:
+    """
+    Gate node — runs after validation.
+    Determines required documents for this dispute and checks whether
+    the customer submitted enough evidence to proceed with AI analysis.
+    If insufficient, the case is saved as 'Pending Documents' and agents are skipped.
+    """
+    from services.document_rules import check_documents_sufficient, infer_category
+
+    start = time.time()
+    node  = "document_check"
+    d     = state["dispute_input"]
+
+    category = infer_category(d.get("dispute_reason", ""))
+    fraud    = bool(d.get("fraud_selected", False))
+    amount   = float(d.get("amount", 0))
+    doc_count = int(d.get("_document_count", 0))
+
+    sufficient, required_docs = check_documents_sufficient(category, fraud, amount, doc_count)
+
+    log_workflow_event(
+        workflow_logger,
+        event="NODE_DOCUMENT_CHECK_COMPLETE",
+        stage=node,
+        case_id=state.get("case_id"),
+        extra={"sufficient": sufficient, "doc_count": doc_count, "category": category},
+    )
+
+    return {
+        "documents_sufficient": sufficient,
+        "required_documents":   required_docs,
+        "current_stage":        node,
+        "execution_trace":      _trace(
+            node, start, sufficient,
+            f"sufficient={sufficient} doc_count={doc_count} min_required for '{category}'",
+        ),
+    }
+
+
+def pending_documents_node(state: DisputeWorkflowState) -> dict:
+    """
+    Terminal node for cases that lack the minimum required evidence.
+    Creates a persisted case with status 'Pending Documents' so the
+    customer can be notified about what to submit — no AI analysis runs.
+    """
+    start = time.time()
+    node  = "pending_documents"
+    d     = state["dispute_input"]
+
+    final_case = {
+        "case_id":               state["case_id"],
+        "customer_id":           d.get("customer_id", ""),
+        "customer_name":         d.get("customer_name", ""),
+        "email":                 d.get("email", ""),
+        "phone":                 d.get("phone", ""),
+        "transaction_id":        d.get("transaction_id", ""),
+        "transaction_type":      d.get("transaction_type", ""),
+        "merchant":              d.get("merchant", ""),
+        "amount":                float(d.get("amount", 0)),
+        "currency":              d.get("currency", "INR"),
+        "transaction_date":      d.get("transaction_date", ""),
+        "transaction_time":      d.get("transaction_time", ""),
+        "customer_comment":      d.get("customer_comment", ""),
+        "dispute_reason":        d.get("dispute_reason", ""),
+        "fraud_selected":        d.get("fraud_selected", False),
+        "transaction_metadata":  d.get("transaction_metadata") or {},
+        # Not yet classified — pending documents
+        "dispute_category":      None,
+        "fraud_suspicion":       False,
+        "customer_intent_summary": None,
+        "confidence_score":      0.0,
+        "confidence_factors":    [],
+        "risk_tags":             [],
+        "structured_reasoning":  None,
+        "evidence_match":        None,
+        "evidence_match_note":   None,
+        "tools_used":            [],
+        "agent_metadata":        None,
+        "metrics":               None,
+        "fallback_mode":         False,
+        "failure_reason":        None,
+        # Required documents stored so the customer and analyst see them
+        "investigation_plan": {
+            "required_documents": state.get("required_documents", []),
+            "status_reason":      "Insufficient evidence submitted. Please upload the required documents to continue.",
+        },
+        "status":         "Pending Documents",
+        "workflow_ready": False,
+        "current_stage":  "pending_documents",
+        "execution_trace": state.get("execution_trace", []),
+        "created_at":     utc_now_iso(),
+    }
+
+    workflow_logger.warning(
+        "Dispute halted — insufficient documents",
+        extra={"case_id": state.get("case_id"), "required": state.get("required_documents", [])},
+    )
+
+    return {
+        "final_case":    final_case,
+        "current_stage": "pending_documents",
+        "execution_trace": _trace(node, start, False, "halted — insufficient documents"),
     }
 
 
@@ -421,6 +530,12 @@ def route_after_validation(state: DisputeWorkflowState) -> str:
     return "invalid"
 
 
+def route_after_document_check(state: DisputeWorkflowState) -> str:
+    if state.get("documents_sufficient"):
+        return "sufficient"
+    return "insufficient"
+
+
 # ── Graph Assembly ────────────────────────────────────────────────────────────
 
 def build_dispute_workflow() -> Any:
@@ -428,13 +543,15 @@ def build_dispute_workflow() -> Any:
     graph = StateGraph(DisputeWorkflowState)
 
     # Register nodes
-    graph.add_node("intake", intake_node)
-    graph.add_node("validation", validation_node)
+    graph.add_node("intake",               intake_node)
+    graph.add_node("validation",           validation_node)
+    graph.add_node("document_check",       document_check_node)
+    graph.add_node("pending_documents",    pending_documents_node)
     graph.add_node("dispute_understanding", dispute_understanding_node)
-    graph.add_node("reasoning", reasoning_node)
-    graph.add_node("investigation", investigation_node)
-    graph.add_node("structured_output", structured_output_node)
-    graph.add_node("invalid_submission", invalid_submission_node)
+    graph.add_node("reasoning",            reasoning_node)
+    graph.add_node("investigation",        investigation_node)
+    graph.add_node("structured_output",    structured_output_node)
+    graph.add_node("invalid_submission",   invalid_submission_node)
 
     # Entry point
     graph.set_entry_point("intake")
@@ -446,8 +563,17 @@ def build_dispute_workflow() -> Any:
         "validation",
         route_after_validation,
         {
-            "valid": "dispute_understanding",
+            "valid":   "document_check",
             "invalid": "invalid_submission",
+        },
+    )
+
+    graph.add_conditional_edges(
+        "document_check",
+        route_after_document_check,
+        {
+            "sufficient":   "dispute_understanding",
+            "insufficient": "pending_documents",
         },
     )
 
@@ -455,6 +581,7 @@ def build_dispute_workflow() -> Any:
     graph.add_edge("reasoning", "investigation")
     graph.add_edge("investigation", "structured_output")
     graph.add_edge("structured_output", END)
+    graph.add_edge("pending_documents", END)
     graph.add_edge("invalid_submission", END)
 
     compiled = graph.compile()
@@ -475,18 +602,20 @@ def run_dispute_workflow(dispute_input: dict, document_texts: Optional[List[str]
         dict with keys: final_case, validation_errors, execution_trace, current_stage
     """
     initial_state: DisputeWorkflowState = {
-        "dispute_input":      dispute_input,
-        "document_texts":     document_texts or [],
-        "validation_passed":  False,
-        "validation_errors":  [],
-        "validation_warnings": [],
+        "dispute_input":        dispute_input,
+        "document_texts":       document_texts or [],
+        "validation_passed":    False,
+        "validation_errors":    [],
+        "validation_warnings":  [],
+        "documents_sufficient": True,
+        "required_documents":   [],
         "ai_analysis":          None,
         "investigation_output": None,
         "final_case":           None,
-        "execution_trace":    [],
-        "current_stage":      "start",
-        "error_message":      None,
-        "case_id":            "",
+        "execution_trace":      [],
+        "current_stage":        "start",
+        "error_message":        None,
+        "case_id":              "",
     }
 
     workflow_logger.info(

@@ -150,18 +150,35 @@ def finalize_node(state: InvestigationAgentState) -> dict:
     parsed.setdefault("data_quality_factors",      [])
     parsed.setdefault("manual_review_reason",      [])
 
+    # Server-stamp required_documents — deterministic, never trust LLM output for this
+    from services.document_rules import get_required_documents
+    parsed["required_documents"] = get_required_documents(
+        category       = a1.get("dispute_category", "Other"),
+        fraud_selected = a1.get("fraud_suspicion", False),
+        amount         = float(a1.get("amount", 0)),
+        risk_tags      = a1.get("risk_tags") or [],
+    )
+
     # Server-stamp investigation_coverage — derived from actual tool execution records
     parsed["investigation_coverage"] = {
         "customer_history_checked":  "lookup_customer_history" in tools_used,
         "merchant_history_checked":  "check_merchant_risk" in tools_used,
         "duplicate_check_performed": "find_duplicate_transaction" in tools_used,
         "related_cases_reviewed":    "lookup_related_cases" in tools_used,
-        "documents_recommended":     "recommend_documents" in tools_used,
+    }
+
+    # Merge Agent 1 classification fields into plan dict for confidence calculation
+    # (fraud_suspicion, dispute_category, risk_tags come from a1, not the LLM output)
+    confidence_input = {
+        **parsed,
+        "fraud_suspicion":  a1.get("fraud_suspicion", False),
+        "dispute_category": a1.get("dispute_category", "Other"),
+        "risk_tags":        a1.get("risk_tags") or [],
     }
 
     # Server-stamp investigation confidence (deterministic, not LLM-generated)
-    parsed["investigation_confidence"]         = calculate_investigation_confidence(parsed)
-    parsed["investigation_confidence_factors"] = generate_confidence_factors(parsed)
+    parsed["investigation_confidence"]         = calculate_investigation_confidence(confidence_input)
+    parsed["investigation_confidence_factors"] = generate_confidence_factors(confidence_input)
 
     log_workflow_event(
         agent_logger,
@@ -226,12 +243,18 @@ def _fallback_output(
         complexity = "MEDIUM"
         q_conf     = 0.50
 
+    from services.document_rules import get_required_documents
+    fallback_docs = get_required_documents(
+        category       = cat,
+        fraud_selected = fraud,
+        amount         = amount,
+    )
+
     investigation_coverage = {
         "customer_history_checked":  "lookup_customer_history" in tools_used,
         "merchant_history_checked":  "check_merchant_risk" in tools_used,
         "duplicate_check_performed": "find_duplicate_transaction" in tools_used,
         "related_cases_reviewed":    "lookup_related_cases" in tools_used,
-        "documents_recommended":     "recommend_documents" in tools_used,
     }
 
     return {
@@ -253,7 +276,7 @@ def _fallback_output(
         "duplicate_found":          False,
         "related_case_id":          None,
         "related_cases":            {"similar_cases": 0, "resolution_rate": 0.0},
-        "required_documents":       ["Bank statement (last 3 months)", "Supporting documentation"],
+        "required_documents":       fallback_docs,
         "recommended_steps": [
             "Manual review required — automated investigation failed.",
             "Gather all available evidence from customer.",

@@ -270,17 +270,17 @@ export default function InternalReviewCaseDetail() {
       )}
 
       {/* Status control */}
-      <div className="bfsi-card p-4 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Shield className="w-4 h-4 text-bfsi-gold" />
-          <span className="text-sm text-bfsi-text-muted">Update investigation status:</span>
-        </div>
-        <button onClick={handleReanalyse} disabled={reanalysing}
-          className="btn-ghost flex items-center gap-1.5 text-xs text-bfsi-gold border border-bfsi-gold/30 disabled:opacity-50">
-          {reanalysing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          Re-analyse
-        </button>
+      <div className="bfsi-card p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2">
+          <Shield className="w-4 h-4 text-bfsi-gold" />
+          <span className="text-xs text-bfsi-text-dim uppercase tracking-wider font-semibold">Case Status</span>
+        </div>
+        <div className="flex items-center gap-3 ml-auto">
+          <button onClick={handleReanalyse} disabled={reanalysing}
+            className="btn-ghost flex items-center gap-1.5 text-xs text-bfsi-gold border border-bfsi-gold/30 disabled:opacity-50">
+            {reanalysing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Re-analyse
+          </button>
           <select
             className="bfsi-select text-sm py-1.5 pr-8 w-auto"
             value={caseData.status}
@@ -414,6 +414,33 @@ export default function InternalReviewCaseDetail() {
             }
           </div>
 
+          {/* Required Documents — shown here so analysts see what evidence is needed alongside the AI analysis */}
+          {(() => {
+            const docs: string[] = caseData.investigation_plan?.required_documents ?? [];
+            return docs.length > 0 ? (
+              <div className="bfsi-card p-5 lg:col-span-2">
+                <div className="flex items-center gap-2 mb-4">
+                  <FileText className="w-4 h-4 text-bfsi-gold" />
+                  <p className="section-header mb-0">Required Documents Checklist</p>
+                  <span className="ml-auto text-[10px] text-bfsi-text-dim bg-bfsi-muted px-2 py-0.5 rounded-full border border-bfsi-border">
+                    {docs.length} document{docs.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {docs.map((doc: string, i: number) => (
+                    <div key={i} className="flex items-center gap-2 p-2.5 bg-bfsi-muted rounded-lg border border-bfsi-border">
+                      <CheckCircle className="w-3.5 h-3.5 text-bfsi-gold flex-shrink-0" />
+                      <span className="text-xs text-bfsi-text-muted">{doc}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-bfsi-text-dim mt-3 pt-3 border-t border-bfsi-border">
+                  Computed deterministically from dispute category, fraud signals, and transaction amount. Not LLM-generated.
+                </p>
+              </div>
+            ) : null;
+          })()}
+
         </div>
       )}
 
@@ -436,12 +463,14 @@ export default function InternalReviewCaseDetail() {
           LOW:      "text-green-400 bg-green-400/10 border-green-400/30",
         };
         const queueColor: Record<string, string> = {
-          CRITICAL_QUEUE:   "text-red-400 bg-red-400/10 border-red-400/30",
-          FRAUD_QUEUE:      "text-orange-400 bg-orange-400/10 border-orange-400/30",
-          HIGH_VALUE_QUEUE: "text-yellow-400 bg-yellow-400/10 border-yellow-400/30",
-          MERCHANT_QUEUE:   "text-blue-400 bg-blue-400/10 border-blue-400/30",
-          ATM_QUEUE:        "text-purple-400 bg-purple-400/10 border-purple-400/30",
-          STANDARD_QUEUE:   "text-bfsi-text-dim bg-bfsi-muted border-bfsi-border",
+          FRAUD_OPS:         "text-red-400 bg-red-400/10 border-red-400/30",
+          UPI_FRAUD:         "text-orange-400 bg-orange-400/10 border-orange-400/30",
+          CHARGEBACK_TEAM:   "text-yellow-400 bg-yellow-400/10 border-yellow-400/30",
+          ATM_INVESTIGATION: "text-purple-400 bg-purple-400/10 border-purple-400/30",
+          COMPLIANCE_REVIEW: "text-pink-400 bg-pink-400/10 border-pink-400/30",
+          SENIOR_ANALYST:    "text-amber-400 bg-amber-400/10 border-amber-400/30",
+          MERCHANT_DISPUTES: "text-blue-400 bg-blue-400/10 border-blue-400/30",
+          GENERAL:           "text-bfsi-text-dim bg-bfsi-muted border-bfsi-border",
         };
         const queueConf      = plan.queue_confidence ?? null;
         const queueConfPct   = queueConf != null ? Math.round(queueConf * 100) : null;
@@ -578,7 +607,7 @@ export default function InternalReviewCaseDetail() {
                   <p className="text-xs text-bfsi-text-dim">No factors available.</p>
                 )}
                 <p className="text-[10px] text-bfsi-text-dim mt-3 pt-3 border-t border-bfsi-border">
-                  Computed deterministically: 40% queue confidence + 40% data quality + 20% historical precedent. Not LLM-generated.
+                  Computed deterministically: 35% queue confidence + 30% data quality + 20% historical precedent + 10% fraud signal alignment + 5% coverage. Not LLM-generated.
                 </p>
               </div>
             )}
@@ -595,18 +624,16 @@ export default function InternalReviewCaseDetail() {
                       plan.investigation_coverage.merchant_history_checked,
                       plan.investigation_coverage.duplicate_check_performed,
                       plan.investigation_coverage.related_cases_reviewed,
-                      plan.investigation_coverage.documents_recommended,
-                    ].filter(Boolean).length} / 5 areas covered
+                    ].filter(Boolean).length} / 4 areas covered
                   </span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {(
                     [
-                      { key: "customer_history_checked",  label: "Customer History",  desc: "lookup_customer_history" },
-                      { key: "merchant_history_checked",  label: "Merchant Risk",     desc: "check_merchant_risk" },
-                      { key: "duplicate_check_performed", label: "Duplicate Check",   desc: "find_duplicate_transaction" },
-                      { key: "related_cases_reviewed",    label: "Related Cases",     desc: "lookup_related_cases" },
-                      { key: "documents_recommended",     label: "Documents",         desc: "recommend_documents" },
+                      { key: "customer_history_checked",  label: "Customer History" },
+                      { key: "merchant_history_checked",  label: "Merchant Risk"    },
+                      { key: "duplicate_check_performed", label: "Duplicate Check"  },
+                      { key: "related_cases_reviewed",    label: "Related Cases"    },
                     ] as const
                   ).map(({ key, label }) => {
                     const checked = plan.investigation_coverage?.[key];
@@ -789,25 +816,6 @@ export default function InternalReviewCaseDetail() {
                 )}
               </div>
             )}
-
-            {/* ── Required Documents ───────────────────────────────────────── */}
-            <div className="bfsi-card p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <FileText className="w-4 h-4 text-bfsi-gold" />
-                <p className="section-header mb-0">Required Documents Checklist</p>
-              </div>
-              {plan.required_documents?.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {plan.required_documents.map((doc: string, i: number) => (
-                    <div key={i} className="flex items-center gap-2 p-2.5 bg-bfsi-muted rounded-lg border border-bfsi-border">
-                      <CheckCircle className="w-3.5 h-3.5 text-bfsi-gold flex-shrink-0" />
-                      <span className="text-xs text-bfsi-text-muted">{doc}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : <p className="text-xs text-bfsi-text-dim">No document checklist available.</p>}
-            </div>
-
 
           </div>
         );

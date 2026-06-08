@@ -1,23 +1,20 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect, useState } from "react";
 import {
-  Upload,
-  X,
-  FileText,
-  Image,
-  FileSpreadsheet,
-  File,
-  Lock,
-  Info,
+  Upload, X, FileText, Image, FileSpreadsheet, File,
+  Lock, AlertCircle, CheckCircle2,
 } from "lucide-react";
 import { Panel, SubSection } from "./FormControls";
+import { getDocumentRequirements } from "@/lib/api";
 
 interface Step5Props {
   files: File[];
   onAdd: (files: File[]) => void;
   onRemove: (index: number) => void;
-  suggestions: string[];
+  disputeReason: string;
+  fraudSelected: boolean;
+  amount: number;
   error?: string;
 }
 
@@ -37,15 +34,29 @@ function FileIcon({ name }: { name: string }) {
   return <File className="w-4 h-4 text-slate-400" />;
 }
 
-const FALLBACK_SUGGESTIONS = [
-  "Bank statement",
-  "Transaction screenshot",
-  "Merchant communication",
-  "Receipt or invoice",
-];
-
-export default function Step5({ files, onAdd, onRemove, suggestions, error }: Step5Props) {
+export default function Step5({
+  files, onAdd, onRemove,
+  disputeReason, fraudSelected, amount,
+  error,
+}: Step5Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [requiredDocs, setRequiredDocs]   = useState<string[]>([]);
+  const [docsCategory, setDocsCategory]   = useState("");
+  const [loadingDocs, setLoadingDocs]     = useState(false);
+
+  // Fetch required documents whenever dispute details change
+  useEffect(() => {
+    if (!disputeReason) return;
+    setLoadingDocs(true);
+    getDocumentRequirements(disputeReason, fraudSelected, amount)
+      .then((result) => {
+        if (result) {
+          setRequiredDocs(result.required_documents);
+          setDocsCategory(result.category);
+        }
+      })
+      .finally(() => setLoadingDocs(false));
+  }, [disputeReason, fraudSelected, amount]);
 
   function handleFiles(selected: FileList | null) {
     if (!selected) return;
@@ -58,33 +69,56 @@ export default function Step5({ files, onAdd, onRemove, suggestions, error }: St
     handleFiles(e.dataTransfer.files);
   }
 
-  const displaySuggestions = suggestions.length > 0 ? suggestions : FALLBACK_SUGGESTIONS;
+  const hasImage = files.some((f) => /\.(jpg|jpeg|png)$/i.test(f.name));
 
   return (
     <div className="space-y-4">
 
-      {/* ── Recommended Documents ─────────────────────────────────────────── */}
-      <Panel label="Recommended Documents">
-        <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-          Based on your dispute type, the following documents will materially accelerate case resolution and reduce the likelihood of information requests during investigation.
-        </p>
-        <div className="space-y-1.5">
-          {displaySuggestions.map((s) => (
-            <div
-              key={s}
-              className="flex items-center gap-2.5 px-3 py-2 rounded border border-gray-200 bg-gray-50"
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0" />
-              <span className="text-xs text-gray-700">{s}</span>
+      {/* ── Required Documents ────────────────────────────────────────────── */}
+      <Panel label={docsCategory ? `Required Documents — ${docsCategory}` : "Required Documents"}>
+        {loadingDocs ? (
+          <p className="text-xs text-slate-400 py-2">Loading document requirements…</p>
+        ) : requiredDocs.length > 0 ? (
+          <>
+            <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+              The following documents are required for your dispute type.
+              Missing any of these may delay your case or cause it to be held for further information.
+            </p>
+            <div className="space-y-1.5">
+              {requiredDocs.map((doc, i) => {
+                const uploaded = files.some((f) =>
+                  f.name.toLowerCase().includes(doc.split(" ")[0].toLowerCase())
+                );
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded border ${
+                      uploaded
+                        ? "border-green-200 bg-green-50"
+                        : "border-amber-200 bg-amber-50"
+                    }`}
+                  >
+                    {uploaded
+                      ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                      : <AlertCircle  className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    }
+                    <span className={`text-xs ${uploaded ? "text-green-800" : "text-amber-800"}`}>
+                      {doc}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
+          </>
+        ) : (
+          <p className="text-xs text-slate-400 py-2">
+            Complete Step 3 (Dispute Details) to see required documents for your case.
+          </p>
+        )}
       </Panel>
 
       {/* ── Upload ────────────────────────────────────────────────────────── */}
       <Panel label="Upload Supporting Documents *">
-
-        {/* Drop zone */}
         <div
           onDrop={handleDrop}
           onDragOver={(e) => e.preventDefault()}
@@ -110,7 +144,6 @@ export default function Step5({ files, onAdd, onRemove, suggestions, error }: St
           />
         </div>
 
-        {/* File list */}
         {files.length > 0 && (
           <div className="mt-4">
             <SubSection label={`${files.length} Document${files.length > 1 ? "s" : ""} Attached`}>
@@ -122,9 +155,7 @@ export default function Step5({ files, onAdd, onRemove, suggestions, error }: St
                   >
                     <FileIcon name={file.name} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-slate-800 truncate">
-                        {file.name}
-                      </p>
+                      <p className="text-xs font-semibold text-slate-800 truncate">{file.name}</p>
                       <p className="text-[10px] text-slate-400 mt-0.5">{formatBytes(file.size)}</p>
                     </div>
                     <button
@@ -142,13 +173,16 @@ export default function Step5({ files, onAdd, onRemove, suggestions, error }: St
         )}
 
         <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
-          <Info className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-500" />
           At least one image proof (JPG or PNG) is required to submit your dispute.
+          {!hasImage && files.length > 0 && (
+            <span className="text-red-500 font-medium ml-1">No image uploaded yet.</span>
+          )}
         </p>
 
         {error && (
           <p className="mt-2 flex items-center gap-1.5 text-xs text-red-600 font-medium">
-            <Info className="w-3.5 h-3.5 shrink-0" />
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
             {error}
           </p>
         )}
@@ -162,7 +196,9 @@ export default function Step5({ files, onAdd, onRemove, suggestions, error }: St
             Document Security
           </p>
           <p className="text-xs text-slate-500 leading-relaxed">
-            All uploaded documents are encrypted at rest and in transit using AES-256. Files are retained for 90 days as required under RBI record-keeping guidelines, after which they are permanently deleted from all systems.
+            All uploaded documents are encrypted at rest and in transit using AES-256.
+            Files are retained for 90 days as required under RBI record-keeping guidelines,
+            after which they are permanently deleted from all systems.
           </p>
         </div>
       </div>

@@ -494,128 +494,13 @@ def lookup_related_cases(dispute_category: str, merchant: str = "") -> str:
         db.close()
 
 
-# ── Tool 5 — Document recommendation ─────────────────────────────────────────
-
-_DOCUMENT_MAP: dict = {
-    "Unauthorized Transaction": [
-        "Bank statement (last 3 months)",
-        "SMS / email transaction alert screenshot",
-        "OTP receipt (if applicable)",
-        "Police FIR or written complaint (if filed)",
-        "Account activity report",
-    ],
-    "Duplicate Transaction": [
-        "Bank statement showing both charges",
-        "Transaction receipt or confirmation",
-        "Merchant order confirmation",
-        "Payment gateway reference numbers",
-    ],
-    "Refund Not Received": [
-        "Original payment receipt",
-        "Refund confirmation from merchant",
-        "Bank statement (last 30 days)",
-        "Merchant communication (email / chat screenshot)",
-        "Order cancellation confirmation",
-    ],
-    "Product Not Received": [
-        "Order confirmation or invoice",
-        "Payment receipt",
-        "Merchant communication",
-        "Delivery tracking information",
-        "Screenshot of order status",
-    ],
-    "Subscription Abuse": [
-        "Subscription terms and conditions",
-        "Cancellation confirmation (if obtained)",
-        "Bank statement showing recurring charges",
-        "Merchant communication",
-        "Screenshot of account cancellation",
-    ],
-    "ATM Cash Issue": [
-        "ATM transaction receipt",
-        "Bank statement showing debit",
-        "ATM reference number",
-        "CCTV request form (if applicable)",
-        "Written complaint to branch (if filed)",
-    ],
-    "Merchant Dispute": [
-        "Original invoice or receipt",
-        "Merchant communication (email / chat / SMS)",
-        "Photos of product or service (if relevant)",
-        "Payment confirmation",
-        "Menu or price list at time of transaction",
-    ],
-    "Friendly Fraud": [
-        "Original purchase receipt",
-        "Proof of transaction authorisation",
-        "Device or IP access logs",
-        "Any communication with customer",
-        "Merchant delivery confirmation",
-    ],
-    "Other": [
-        "Bank statement (last 3 months)",
-        "Any supporting documentation",
-        "Customer statutory declaration",
-    ],
-}
-
-_FRAUD_EXTRA = [
-    "Police FIR or written complaint",
-    "OTP transaction logs",
-]
-
-_HIGH_VALUE_EXTRA = [
-    "KYC verification documents",
-    "Source of funds declaration",
-]
-
-
-@tool
-def recommend_documents(
-    dispute_category: str,
-    fraud_suspicion: bool,
-    risk_tags: str,
-) -> str:
-    """Recommend the required supporting documents based on dispute category,
-    fraud suspicion flag, and active risk tags.
-    Always call this for every dispute — analyst queue cannot proceed without a document checklist.
-    Pass risk_tags as a comma-separated string."""
-    base = list(_DOCUMENT_MAP.get(dispute_category, _DOCUMENT_MAP["Other"]))
-
-    tags = [t.strip().upper() for t in risk_tags.split(",") if t.strip()]
-
-    if fraud_suspicion:
-        for doc in _FRAUD_EXTRA:
-            if doc not in base:
-                base.append(doc)
-
-    if "HIGH_VALUE_TRANSACTION" in tags:
-        for doc in _HIGH_VALUE_EXTRA:
-            if doc not in base:
-                base.append(doc)
-
-    if "OTP_VERIFIED" in tags and "OTP transaction logs" not in base:
-        base.append("OTP transaction logs")
-
-    if "INTERNATIONAL_TRANSACTION" in tags:
-        base.append("Passport or travel document (proof of location at transaction time)")
-
-    doc_list = "\n".join(f"  {i+1}. {d}" for i, d in enumerate(base))
-    return (
-        f"REQUIRED DOCUMENTS — {dispute_category}\n"
-        f"{doc_list}\n"
-        f"  Total Required       : {len(base)}"
-    )
-
-
 # ── Registry ──────────────────────────────────────────────────────────────────
-# graph.py and pipeline.py resolve callables by reading agent_tools from agent.yaml
-# and looking each name up here. Add a new tool here + in agent.yaml — nowhere else.
+# Document requirements are computed by services/document_rules.py (deterministic,
+# no LLM needed) and stamped server-side in the investigation finalize_node.
 
 TOOL_REGISTRY: dict = {
     "lookup_customer_history":    lookup_customer_history,
     "check_merchant_risk":        check_merchant_risk,
     "find_duplicate_transaction": find_duplicate_transaction,
     "lookup_related_cases":       lookup_related_cases,
-    "recommend_documents":        recommend_documents,
 }

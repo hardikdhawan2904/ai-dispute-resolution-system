@@ -4,10 +4,8 @@ All schemas follow strict BFSI data standards.
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field, field_validator
-import re
 
 
 # ── Enumerations ──────────────────────────────────────────────────────────────
@@ -24,18 +22,6 @@ DisputeCategory = Literal[
     "Other",
 ]
 
-TransactionType = Literal[
-    "Credit Card",
-    "Debit Card",
-    "UPI",
-    "Net Banking",
-    "Wallet",
-    "POS",
-    "ATM",
-    "Online Purchase",
-    "International",
-]
-
 Priority = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"]
 
 CaseStatus = Literal[
@@ -46,22 +32,6 @@ CaseStatus = Literal[
     "Resolved",
     "Rejected",
     "Closed",
-]
-
-RiskTag = Literal[
-    "HIGH_VALUE_TRANSACTION",
-    "INTERNATIONAL_TRANSACTION",
-    "POSSIBLE_FRAUD",
-    "DUPLICATE_PAYMENT",
-    "FRIENDLY_FRAUD_RISK",
-    "HIGH_PRIORITY_CASE",
-    "OTP_VERIFIED",
-    "DEVICE_MISMATCH",
-    "SUSPICIOUS_BEHAVIOR",
-    "CARD_NOT_PRESENT",
-    "RECURRING_DISPUTE",
-    "MERCHANT_BLACKLISTED",
-    "VELOCITY_BREACH",
 ]
 
 
@@ -104,35 +74,6 @@ class DisputeSubmissionRequest(BaseModel):
     @classmethod
     def validate_currency(cls, v: str) -> str:
         return v.upper().strip()
-
-
-# ── AI Output Schema (LangGraph structured output) ────────────────────────────
-
-class DisputeCaseOutput(BaseModel):
-    """The structured JSON produced by the Dispute Understanding Agent."""
-
-    case_id: str
-    customer_id: str
-    transaction_id: str
-    transaction_type: str
-    merchant: str
-    amount: float
-    currency: str
-    dispute_category: str
-    fraud_suspicion: bool
-    customer_intent_summary: str
-    priority: Priority
-    confidence_score: float = Field(..., ge=0.0, le=1.0)
-    risk_tags: List[str] = Field(default_factory=list)
-    structured_reasoning: str
-    status: str = "Dispute Raised"
-    workflow_ready: bool = True
-    created_at: str
-
-    @field_validator("confidence_score")
-    @classmethod
-    def clamp_confidence(cls, v: float) -> float:
-        return max(0.0, min(1.0, v))
 
 
 # ── Response Schemas ──────────────────────────────────────────────────────────
@@ -190,14 +131,6 @@ class DisputeCaseResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class DisputeSubmissionResponse(BaseModel):
-    """Returned immediately after successful dispute submission."""
-    success: bool
-    case_id: str
-    message: str
-    dispute_case: DisputeCaseResponse
-
-
 class CasesListResponse(BaseModel):
     total: int
     cases: List[DisputeCaseResponse]
@@ -213,25 +146,6 @@ class DashboardStatsResponse(BaseModel):
     cases_by_priority: dict
     cases_by_status: dict
     recent_cases: List[DisputeCaseResponse]
-
-
-class WorkflowStateResponse(BaseModel):
-    case_id: str
-    node_name: str
-    execution_time_ms: Optional[float]
-    success: bool
-    error_message: Optional[str]
-    created_at: str
-
-
-class AuditLogResponse(BaseModel):
-    id: int
-    case_id: str
-    event_type: str
-    stage: Optional[str]
-    actor: str
-    message: Optional[str]
-    created_at: str
 
 
 class StatusUpdateRequest(BaseModel):

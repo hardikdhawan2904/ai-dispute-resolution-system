@@ -276,7 +276,9 @@ export default function SubmitDisputePage() {
                     setFilesError("");
                   }}
                   onRemove={(idx) => setFiles((prev) => prev.filter((_, i) => i !== idx))}
-                  suggestions={txConfig?.uploadSuggestions ?? []}
+                  disputeReason={form.watch("dispute_reason")}
+                  fraudSelected={form.watch("fraud_selected")}
+                  amount={form.watch("amount") || 0}
                   error={filesError}
                 />
               )}

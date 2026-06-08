@@ -136,7 +136,7 @@ export default function Step2({ form, config }: Step2Props) {
     } else {
       setValue("merchant",          "");
       setValue("amount",            0  as unknown as number);
-      setValue("transaction_type",  "" as TxType);
+      setValue("transaction_type",  "");
       setValue("transaction_date",  "");
       setLookupState("not_found");
     }

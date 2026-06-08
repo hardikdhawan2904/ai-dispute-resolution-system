@@ -15,7 +15,6 @@ Wiring (identical pattern to Agent 1):
 """
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -24,20 +23,19 @@ from agents.investigation_agent.state import InvestigationAgentState
 from agents.investigation_agent.tools import _active_case_id
 from prompts.investigation_prompts import SYSTEM_PROMPT as _SYSTEM_PROMPT
 from utils.pii_masking import mask_id, mask_free_text
+from services.document_rules import get_required_documents
 
 _MERCHANT_CATS = {"Merchant Dispute", "Refund Not Received", "Product Not Received", "Subscription Abuse"}
 
 
 def _run_tools_parallel(a1: dict, active_case_id: str) -> tuple:
-    """Run all 5 IIA tools in parallel threads. Returns (results: dict, tools_used: list)."""
+    """Run all 4 IIA tools in parallel threads. Returns (results: dict, tools_used: list)."""
     from agents.investigation_agent.tools import (
         lookup_customer_history, check_merchant_risk, find_duplicate_transaction,
-        lookup_related_cases, recommend_documents,
+        lookup_related_cases,
     )
-    cat        = a1.get("dispute_category", "Other")
-    fraud      = a1.get("fraud_suspicion", False)
-    risk_tags  = a1.get("risk_tags") or []
-    merchant   = (a1.get("merchant") or "")[:50]
+    cat      = a1.get("dispute_category", "Other")
+    merchant = (a1.get("merchant") or "")[:50]
 
     task_defs = {
         "lookup_customer_history": (
@@ -58,13 +56,6 @@ def _run_tools_parallel(a1: dict, active_case_id: str) -> tuple:
             lookup_related_cases, {
                 "dispute_category": cat,
                 "merchant": merchant if cat in _MERCHANT_CATS else "",
-            }
-        ),
-        "recommend_documents": (
-            recommend_documents, {
-                "dispute_category": cat,
-                "fraud_suspicion":  fraud,
-                "risk_tags":        ", ".join(risk_tags) if risk_tags else "None",
             }
         ),
     }
@@ -132,9 +123,18 @@ def _build_human_message(a1: dict, tool_results: dict) -> str:
     risk_tags = a1.get("risk_tags") or []
     tags_str  = ", ".join(risk_tags) if risk_tags else "None"
 
+    # Required documents — computed deterministically, not by the LLM
+    req_docs = get_required_documents(
+        category       = a1.get("dispute_category", "Other"),
+        fraud_selected = a1.get("fraud_suspicion", False),
+        amount         = float(a1.get("amount", 0)),
+        risk_tags      = risk_tags,
+    )
+    docs_section = "\n".join(f"  {i+1}. {d}" for i, d in enumerate(req_docs))
+
     _TOOL_ORDER = [
-        "lookup_customer_history", "check_merchant_risk", "find_duplicate_transaction",
-        "lookup_related_cases", "recommend_documents",
+        "lookup_customer_history", "check_merchant_risk",
+        "find_duplicate_transaction", "lookup_related_cases",
     ]
     tool_section = "\n\n## PRE-COMPUTED TOOL RESULTS\n(All tools executed — synthesise and produce JSON now)\n"
     for name in _TOOL_ORDER:
@@ -155,5 +155,7 @@ def _build_human_message(a1: dict, tool_results: dict) -> str:
         f"Confidence Score     : {a1.get('confidence_score', 0.0)}\n"
         f"Risk Tags            : {tags_str}\n"
         f"Customer Intent      : {masked_intent}\n"
+        f"\n## REQUIRED DOCUMENTS (pre-computed — copy exactly into required_documents field)\n"
+        f"{docs_section}\n"
         + tool_section
     )

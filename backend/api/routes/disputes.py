@@ -11,13 +11,10 @@ from database.database import get_db
 from services.dispute_service import DisputeService
 from schemas.dispute_schemas import (
     DisputeSubmissionRequest,
-    DisputeSubmissionResponse,
     DisputeCaseResponse,
     CasesListResponse,
     DashboardStatsResponse,
     StatusUpdateRequest,
-    AuditLogResponse,
-    WorkflowStateResponse,
 )
 from api.websocket_manager import ws_manager
 from utils.helpers import generate_case_id, utc_now_iso
@@ -114,7 +111,8 @@ async def submit_dispute_public(
             if text.strip():
                 document_texts.append(f"[{safe_name}]\n{text}")
 
-    data["_preset_case_id"] = case_id
+    data["_preset_case_id"]   = case_id
+    data["_document_count"]   = len(files)
 
     def _run_sync():
         from database.database import SessionLocal
@@ -154,6 +152,20 @@ async def submit_dispute_public(
             "Our team will investigate and contact you within 5–7 business days."
         ),
     }
+
+
+@router.get("/document-requirements")
+def get_document_requirements(
+    dispute_reason: str = Query(...),
+    fraud_selected: bool = Query(default=False),
+    amount: float = Query(default=0),
+):
+    """Return the required documents list for a given dispute reason.
+    Called by the frontend at Step 4 (document upload) to show the customer what to upload."""
+    from services.document_rules import get_required_documents, infer_category
+    category = infer_category(dispute_reason)
+    docs = get_required_documents(category, fraud_selected, amount)
+    return {"category": category, "required_documents": docs}
 
 
 @router.get("/cases", response_model=CasesListResponse)
