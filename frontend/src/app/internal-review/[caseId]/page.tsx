@@ -394,101 +394,6 @@ export default function CaseWorkspace() {
                 </Panel>
               )}
 
-              {/* Investigation Intelligence — Agent 2 snapshot surfaced in analysis tab */}
-              {plan && (
-                <Panel>
-                  <SectionTitle>Investigation Intelligence</SectionTitle>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem", marginBottom: "0.75rem" }}>
-
-                    {/* Customer Profile */}
-                    <div style={{ padding: "0.625rem 0.75rem", backgroundColor: "#111827", border: "1px solid #334155", borderRadius: 3 }}>
-                      <div style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", color: "#475569", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>Customer Profile</div>
-                      {[
-                        { label: "Prior Disputes", value: plan.customer_risk_profile?.previous_disputes ?? "—" },
-                        { label: "Fraud Claims",   value: plan.customer_risk_profile?.fraud_claims ?? "—" },
-                        { label: "Risk Level",     value: plan.customer_risk_profile?.risk_level ?? "—" },
-                      ].map(({ label, value }) => (
-                        <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0", borderBottom: "1px solid #1E293B" }}>
-                          <span style={{ fontSize: "0.67rem", color: "#64748B" }}>{label}</span>
-                          <span style={{ fontSize: "0.7rem", color: "#F8FAFC" }}>{String(value)}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Merchant Profile */}
-                    <div style={{ padding: "0.625rem 0.75rem", backgroundColor: "#111827", border: "1px solid #334155", borderRadius: 3 }}>
-                      <div style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", color: "#475569", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>Merchant Profile</div>
-                      {[
-                        { label: "Risk Level",        value: plan.merchant_risk_profile?.merchant_risk ?? "—" },
-                        { label: "Prior Complaints",  value: plan.merchant_risk_profile?.prior_complaints ?? "—" },
-                        { label: "Fraud Rate",        value: plan.merchant_risk_profile?.fraud_rate != null ? `${(plan.merchant_risk_profile.fraud_rate * 100).toFixed(0)}%` : "—" },
-                      ].map(({ label, value }) => (
-                        <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0", borderBottom: "1px solid #1E293B" }}>
-                          <span style={{ fontSize: "0.67rem", color: "#64748B" }}>{label}</span>
-                          <span style={{ fontSize: "0.7rem", color: "#F8FAFC" }}>{String(value)}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Historical Cases */}
-                    <div style={{ padding: "0.625rem 0.75rem", backgroundColor: "#111827", border: "1px solid #334155", borderRadius: 3 }}>
-                      <div style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", color: "#475569", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>Historical Cases</div>
-                      {[
-                        { label: "Similar Cases",    value: plan.related_cases?.similar_cases ?? "—" },
-                        { label: "Customer Favour",  value: plan.related_cases?.resolved_in_favor ?? "—" },
-                        { label: "Resolution Rate",  value: plan.related_cases?.resolution_rate != null ? `${(plan.related_cases.resolution_rate * 100).toFixed(0)}%` : "—" },
-                      ].map(({ label, value }) => (
-                        <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0", borderBottom: "1px solid #1E293B" }}>
-                          <span style={{ fontSize: "0.67rem", color: "#64748B" }}>{label}</span>
-                          <span style={{ fontSize: "0.7rem", color: "#F8FAFC" }}>{String(value)}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Coverage Summary */}
-                    <div style={{ padding: "0.625rem 0.75rem", backgroundColor: "#111827", border: "1px solid #334155", borderRadius: 3 }}>
-                      <div style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", color: "#475569", letterSpacing: "0.06em", marginBottom: "0.5rem" }}>Coverage Summary</div>
-                      {plan.investigation_coverage ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                          {[
-                            { key: "customer_history_checked",  label: "Customer History" },
-                            { key: "merchant_history_checked",  label: "Merchant Risk" },
-                            { key: "duplicate_check_performed", label: "Duplicate Check" },
-                            { key: "related_cases_reviewed",    label: "Related Cases" },
-                          ].map(({ key, label }) => {
-                            const checked = (plan.investigation_coverage as any)?.[key];
-                            return (
-                              <div key={key} style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
-                                {checked
-                                  ? <CheckCircle style={{ width: 11, height: 11, color: "#15803D", flexShrink: 0 }} />
-                                  : <div style={{ width: 11, height: 11, borderRadius: "50%", border: "1px solid #475569", flexShrink: 0 }} />}
-                                <span style={{ fontSize: "0.68rem", color: checked ? "#4ADE80" : "#64748B" }}>{label}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : <span style={{ fontSize: "0.7rem", color: "#64748B" }}>—</span>}
-                    </div>
-                  </div>
-
-                  {/* Data quality bar */}
-                  {plan.data_quality_score != null && (
-                    <div style={{ paddingTop: "0.625rem", borderTop: "1px solid #334155" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
-                        <span style={{ fontSize: "0.6rem", fontWeight: 600, textTransform: "uppercase", color: "#475569", letterSpacing: "0.06em" }}>Data Quality</span>
-                        <span style={{ fontSize: "0.72rem", fontWeight: 700, fontFamily: "ui-monospace, monospace", color: plan.data_quality_score >= 0.75 ? "#4ADE80" : plan.data_quality_score >= 0.55 ? "#FCD34D" : "#FCA5A5" }}>
-                          {Math.round(plan.data_quality_score * 100)}%
-                        </span>
-                      </div>
-                      <div style={{ height: 3, backgroundColor: "#334155", borderRadius: 2 }}>
-                        <div style={{ height: "100%", width: `${Math.round(plan.data_quality_score * 100)}%`, backgroundColor: plan.data_quality_score >= 0.75 ? "#15803D" : plan.data_quality_score >= 0.55 ? "#B45309" : "#B91C1C", borderRadius: 2 }} />
-                      </div>
-                    </div>
-                  )}
-                  <p style={{ fontSize: "0.65rem", color: "#475569", marginTop: 8 }}>Full detail available in the Investigation tab.</p>
-                </Panel>
-              )}
-
               {/* Risk indicators */}
               <Panel>
                 <SectionTitle>Risk Indicators</SectionTitle>
@@ -571,6 +476,31 @@ export default function CaseWorkspace() {
                       </div>
                     ) : null)}
                   </div>
+
+                  {/* Investigation coverage — lives here alongside the scores */}
+                  {plan.investigation_coverage && (
+                    <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid #334155" }}>
+                      <div style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#64748B", marginBottom: "0.5rem" }}>Investigation Coverage</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.375rem" }}>
+                        {[
+                          { key: "customer_history_checked",  label: "Customer History" },
+                          { key: "merchant_history_checked",  label: "Merchant Risk" },
+                          { key: "duplicate_check_performed", label: "Duplicate Check" },
+                          { key: "related_cases_reviewed",    label: "Related Cases" },
+                        ].map(({ key, label }) => {
+                          const checked = (plan.investigation_coverage as any)?.[key];
+                          return (
+                            <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.3rem", padding: "0.5rem 0.375rem", backgroundColor: checked ? "#F0FDF4" : "#111827", border: `1px solid ${checked ? "#BBF7D0" : "#334155"}`, borderRadius: 3, textAlign: "center" }}>
+                              {checked
+                                ? <CheckCircle style={{ width: 13, height: 13, color: "#15803D" }} />
+                                : <div style={{ width: 13, height: 13, borderRadius: "50%", border: "1px solid #334155" }} />}
+                              <span style={{ fontSize: "0.6rem", fontWeight: 500, color: checked ? "#166534" : "#64748B", lineHeight: 1.3 }}>{label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </Panel>
 
                 {/* Manual review reasons */}
@@ -679,34 +609,6 @@ export default function CaseWorkspace() {
                         ))}
                       </ul>
                     )}
-                  </Panel>
-                )}
-
-                {/* Investigation coverage */}
-                {plan.investigation_coverage && (
-                  <Panel>
-                    <SectionTitle>Investigation Coverage</SectionTitle>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.5rem" }}>
-                      {[
-                        { key: "customer_history_checked",  label: "Customer History" },
-                        { key: "merchant_history_checked",  label: "Merchant Risk" },
-                        { key: "duplicate_check_performed", label: "Duplicate Check" },
-                        { key: "related_cases_reviewed",    label: "Related Cases" },
-                      ].map(({ key, label }) => {
-                        const checked = (plan.investigation_coverage as any)?.[key];
-                        return (
-                          <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.375rem", padding: "0.625rem 0.5rem", backgroundColor: checked ? "#F0FDF4" : "#111827", border: `1px solid ${checked ? "#BBF7D0" : "#334155"}`, borderRadius: 3, textAlign: "center" }}>
-                            {checked
-                              ? <CheckCircle style={{ width: 14, height: 14, color: "#15803D" }} />
-                              : <div style={{ width: 14, height: 14, borderRadius: "50%", border: "1px solid #334155" }} />}
-                            <span style={{ fontSize: "0.62rem", fontWeight: 500, color: checked ? "#166534" : "#64748B", lineHeight: 1.3 }}>{label}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <p style={{ fontSize: "0.62rem", color: "#475569", marginTop: 8 }}>
-                      35% queue confidence + 30% data quality + 20% historical precedent + 10% fraud alignment + 5% coverage
-                    </p>
                   </Panel>
                 )}
 
