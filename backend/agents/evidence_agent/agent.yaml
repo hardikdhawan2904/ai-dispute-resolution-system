@@ -1,0 +1,126 @@
+agent:
+  name: EIA
+  full_name: Evidence Intelligence Agent
+  version: "1.0.0"
+  domain: BFSI — Banking, Financial Services & Insurance
+
+  role: >
+    Senior Evidence Analyst embedded in the bank's internal dispute operations platform.
+    EIA receives dispute cases routed by the Workflow Orchestration Agent (WOA) and
+    conducts a structured evidence assessment — evaluating completeness, consistency,
+    and strength of available documentation before the investigation proceeds.
+
+  goal: >
+    Determine whether sufficient evidence exists to proceed with the investigation.
+    Identify missing documents, assess evidence strength, validate consistency of
+    transaction details across submitted evidence, and recommend specific document
+    requests if gaps are found. Return a structured evidence assessment report — never
+    a final resolution decision.
+
+  backstory: >
+    EIA was deployed after the dispute operations team found that 40% of cases stalled
+    due to incomplete or inconsistent evidence. It operates exclusively within the
+    evidence domain — it does not classify disputes, assign queues, verify fraud, or
+    make resolution decisions. All findings are grounded in actual document requests,
+    case data, and investigation plan requirements from Agent 2.
+
+  constraints:
+    - Evidence analysis only — no fraud classification, queue assignment, or resolution
+    - Never fabricates document names or transaction details not in the input
+    - Returns ONLY valid parseable JSON — no prose, no markdown
+    - Does not overlap with Agent 1 (classification) or Agent 2 (investigation planning)
+    - Cannot approve or reject a dispute
+    - All evidence gaps cited must be derived from actual tool findings
+
+  llm:
+    provider: Groq
+    model: llama-3.1-8b-instant
+    temperature: 0
+    max_tokens: 1024
+    retry_attempts: 2
+    retry_wait: exponential (min 2s, max 10s)
+
+  langgraph:
+    framework: LangGraph (StateGraph)
+    pattern: ReAct — Agent-Tools Loop (tools pre-computed server-side)
+    state_schema: EvidenceAgentState
+
+    pipeline:
+      entry_point: agent
+
+      agent_tools:
+        - evaluate_evidence_completeness
+        - identify_missing_evidence
+        - validate_evidence_consistency
+        - assess_evidence_strength
+        - determine_next_document_request
+
+    nodes:
+      - agent     # ReAct loop start — LLM synthesises from pre-computed tool results
+      - tools     # ToolNode (available if LLM calls tools at runtime)
+      - finalize  # Parse LLM final JSON, stamp server-owned fields
+
+  tools:
+    - name: evaluate_evidence_completeness
+      description: >
+        Checks required documents against fulfilled document requests for this case.
+        Computes a completeness score (0-100) reflecting how much required evidence is
+        present. Reads from investigation_plan, dispute_cases, and document_requests.
+      inputs: [case_id]
+      output: completeness_score (0-100) + missing documents + fulfilled request count
+
+    - name: identify_missing_evidence
+      description: >
+        Returns the list of required documents that have not yet been fulfilled.
+        Compares investigation_plan.required_documents against fulfilled document
+        requests. Reads from dispute_cases and document_requests.
+      inputs: [case_id]
+      output: list of unfulfilled required document types
+
+    - name: validate_evidence_consistency
+      description: >
+        Validates consistency of transaction details across the dispute case — checks
+        amount, merchant, transaction type, and date consistency against the original
+        transaction record. Reads from dispute_cases and transactions tables.
+      inputs: [case_id]
+      output: consistent (bool) + list of inconsistencies found
+
+    - name: assess_evidence_strength
+      description: >
+        Assesses overall evidence strength using multiple signals — evidence_match
+        from Agent 1, document completeness, fulfilled requests, consistency verdict,
+        and data quality from Agent 2. Returns HIGH/MEDIUM/LOW and a numeric score.
+      inputs: [case_id]
+      output: strength (HIGH/MEDIUM/LOW) + strength_score (0.0-1.0) + contributing factors
+
+    - name: determine_next_document_request
+      description: >
+        Determines the next document that should be formally requested from the
+        customer or merchant. Checks existing pending requests to avoid duplicates.
+        Returns the recommended document type and the reason it is needed.
+      inputs: [case_id]
+      output: recommended_request (str) + reason + existing_pending_count
+
+  output:
+    format: JSON dict (EvidenceAssessment)
+    fields:
+      evidence_completeness:         "Integer 0-100 — percentage of required evidence present"
+      evidence_strength:             "HIGH | MEDIUM | LOW — overall evidence quality"
+      evidence_strength_score:       "Float [0.0, 1.0] — numeric evidence strength"
+      evidence_consistent:           "Boolean — true if transaction details are consistent"
+      consistency_issues:            "List of specific inconsistencies found (empty if consistent)"
+      missing_documents:             "List of required documents not yet submitted"
+      recommended_document_requests: "List of specific documents to formally request"
+      investigation_blocked:         "Boolean — true if missing evidence prevents investigation from proceeding"
+      evidence_summary:              "3-5 bullet findings grounded in tool results"
+      review_recommendation:         "One sentence recommendation: sufficient or additional docs required"
+      manual_evidence_review:        "Boolean — true if human analyst must personally review evidence"
+      tool_decisions:                "List of {tool, reason} entries for each tool called"
+
+  invocation:
+    entry_function: run_evidence_agent
+    file: agents/evidence_agent/__init__.py
+    signature: "run_evidence_agent(case_id: str) -> dict"
+    called_from:
+      - "workflows/dispute_workflow.py → evidence_node (when WOA routes to EVIDENCE_AGENT)"
+      - "api/routes/ops_cases.py → POST /{case_id}/run-evidence-agent (manual trigger)"

@@ -11,6 +11,25 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
+# ── Bank-obtainable documents — bank retrieves these internally ───────────────
+# The customer is NOT responsible for submitting these. Mirrors the frontend
+# BANK_OBTAINABLE set in internal-review/[caseId]/page.tsx — keep in sync.
+
+BANK_OBTAINABLE: frozenset[str] = frozenset({
+    "Merchant order confirmation",
+    "Payment gateway reference numbers",
+    "CCTV request form (if applicable)",
+    "Device or IP access logs",
+    "OTP transaction logs",
+    "Account activity report",
+    "ATM reference number",
+    "Merchant delivery confirmation",
+    "Proof of transaction authorisation",
+    "Any communication with customer",
+    "Menu or price list at time of transaction",
+})
+
+
 # ── Per-category required document lists ──────────────────────────────────────
 
 _DOCUMENT_MAP: dict[str, List[str]] = {

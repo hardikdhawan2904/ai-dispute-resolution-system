@@ -252,6 +252,9 @@ class DisputeCase(Base):
     # Agent 3 — WOA (Workflow Orchestration Agent) output
     workflow_plan         = Column(JSON, nullable=True)
 
+    # Agent 4 — EIA (Evidence Intelligence Agent) output
+    evidence_assessment   = Column(JSON, nullable=True)
+
     # Supporting evidence (raw form fields for re-analysis)
     transaction_metadata  = Column(JSON, default=dict)
 
@@ -314,6 +317,7 @@ class DisputeCase(Base):
             "fallback_mode": self.fallback_mode or False,
             "failure_reason": self.failure_reason,
             "workflow_plan": self.workflow_plan,
+            "evidence_assessment": self.evidence_assessment,
             "created_at": _iso(self.created_at),
             "updated_at": _iso(self.updated_at),
         }

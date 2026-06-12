@@ -25,6 +25,7 @@ interface TrackingData {
   estimated_resolution: string;
   document_requested:   boolean;
   required_documents:   string[];
+  pending_documents:    string[];
   documents_received:   number;
   timeline:             TimelineEvent[];
 }
@@ -112,14 +113,14 @@ const ALLOWED_EXTS = [".pdf", ".jpg", ".jpeg", ".png", ".xlsx", ".csv"];
 function DocumentUploadSection({
   caseId,
   requiredDocuments,
+  pendingDocuments,
   documentsReceived,
 }: {
   caseId: string;
   requiredDocuments: string[];
+  pendingDocuments: string[];
   documentsReceived: number;
 }) {
-  // Only show docs not yet covered by previous uploads
-  const pendingDocuments = requiredDocuments.slice(documentsReceived);
   const fileRef                     = useRef<HTMLInputElement>(null);
   const [files, setFiles]           = useState<File[]>([]);
   const [uploading, setUploading]   = useState(false);
@@ -443,6 +444,7 @@ export default function TrackDispute({ initialCaseId }: TrackDisputeProps) {
             <DocumentUploadSection
               caseId={data.case_id}
               requiredDocuments={data.required_documents ?? []}
+              pendingDocuments={data.pending_documents ?? data.required_documents ?? []}
               documentsReceived={data.documents_received ?? 0}
             />
           ) : data.required_documents && data.required_documents.length > 0 && (

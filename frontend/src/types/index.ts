@@ -195,6 +195,39 @@ export interface WorkflowPlan {
   created_at?: string;
 }
 
+export interface EvidenceAssessment {
+  case_id: string;
+  evidence_completeness: number;
+  evidence_strength: "HIGH" | "MEDIUM" | "LOW";
+  evidence_strength_score: number;
+  evidence_consistent: boolean;
+  consistency_issues: string[];
+  missing_documents: string[];
+  recommended_document_requests: string[];
+  investigation_blocked: boolean;
+  evidence_summary: string[];
+  review_recommendation: string;
+  manual_evidence_review: boolean;
+  tool_decisions?: Array<{ tool: string; reason: string }>;
+  tools_used?: string[];
+  agent_metadata?: {
+    agent_name: string;
+    agent_version: string;
+    model: string;
+    execution_timestamp: string;
+    execution_duration_ms: number;
+  };
+  metrics?: {
+    total_duration_ms: number;
+    llm_calls: number;
+    tool_calls: number;
+    retry_count: number;
+  };
+  fallback_mode?: boolean;
+  failure_reason?: string | null;
+  created_at?: string;
+}
+
 export interface DisputeCase {
   case_id: string;
   customer_id: string;
@@ -235,6 +268,8 @@ export interface DisputeCase {
   investigation_plan?: InvestigationPlan | null;
   // Agent 3 — WOA workflow plan
   workflow_plan?: WorkflowPlan | null;
+  // Agent 4 — EIA evidence assessment
+  evidence_assessment?: EvidenceAssessment | null;
   // Agent 1 fallback resilience
   fallback_mode?: boolean;
   failure_reason?: string | null;
@@ -306,6 +341,11 @@ export interface OpsAnalytics {
   by_status: Record<string, number>;
   by_priority: Record<string, number>;
   by_category: Record<string, number>;
+  // Agent 4 — EIA evidence metrics
+  evidence_reviews_pending?: number;
+  evidence_reviews_completed?: number;
+  blocked_investigations?: number;
+  avg_evidence_completeness?: number;
 }
 
 export interface DisputeSubmissionResponse {

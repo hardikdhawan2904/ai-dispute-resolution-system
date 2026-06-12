@@ -9,9 +9,9 @@ import {
   RefreshCw, X, ZoomIn, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { formatCurrency, formatDate, getPriorityColor, getConfidenceLabel } from "@/lib/utils";
-import { getCase, getAuditLogs, getWorkflowStates, updateCaseStatus, reanalyseCase, getCaseUploads } from "@/lib/api";
+import { getCase, getAuditLogs, getWorkflowStates, updateCaseStatus, reanalyseCase, getCaseUploads, runEvidenceAgent, createDocumentRequest } from "@/lib/api";
 import type { CaseUploadFile } from "@/lib/api";
-import type { DisputeCase, AuditLog, WorkflowState, CaseStatus } from "@/types";
+import type { DisputeCase, AuditLog, WorkflowState, CaseStatus, EvidenceAssessment } from "@/types";
 import RiskTags from "@/components/dispute/RiskTags";
 import WorkflowStatus from "@/components/dispute/WorkflowStatus";
 import { useDisputeSocket, type DisputeSocketEvent } from "@/hooks/useDisputeSocket";
@@ -20,6 +20,22 @@ const CASE_STATUSES: CaseStatus[] = [
   "Dispute Raised", "Under Investigation", "Pending Documents",
   "Escalated", "Resolved", "Rejected", "Closed",
 ];
+
+// Documents the bank/merchant obtains internally — never request from the customer.
+// Mirrors backend services/document_rules.py BANK_OBTAINABLE set.
+const BANK_OBTAINABLE = new Set([
+  "Merchant order confirmation",
+  "Payment gateway reference numbers",
+  "CCTV request form (if applicable)",
+  "Device or IP access logs",
+  "OTP transaction logs",
+  "Account activity report",
+  "ATM reference number",
+  "Merchant delivery confirmation",
+  "Proof of transaction authorisation",
+  "Any communication with customer",
+  "Menu or price list at time of transaction",
+]);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -127,7 +143,8 @@ export default function CaseWorkspace() {
   const [elapsed, setElapsed]               = useState(0);
   const [uploads, setUploads]               = useState<CaseUploadFile[]>([]);
   const [lightbox, setLightbox]             = useState<string | null>(null);
-  const [activeTab, setActiveTab]           = useState<"analysis" | "investigation" | "evidence" | "audit" | "workflow" | "orchestration">("analysis");
+  const [activeTab, setActiveTab]           = useState<"analysis" | "investigation" | "evidence_review" | "evidence" | "audit" | "workflow" | "orchestration">("analysis");
+  const [runningEIA, setRunningEIA]         = useState(false);
   const [whyPlanOpen, setWhyPlanOpen]       = useState(false);
   const [liveUpdate, setLiveUpdate]         = useState(false);
   const [sidebarOpen, setSidebarOpen]       = useState<Record<string, boolean>>({
@@ -167,6 +184,20 @@ export default function CaseWorkspace() {
     } finally { clearInterval(timer); setReanalysing(false); }
   }
 
+  async function handleRunEvidenceReview() {
+    if (!caseData || runningEIA) return;
+    setRunningEIA(true);
+    try {
+      const res = await runEvidenceAgent(caseData.case_id);
+      setCaseData(c => c ? { ...c, evidence_assessment: res.evidence_assessment } : c);
+      toast.success("Evidence review completed");
+    } catch (err: unknown) {
+      toast.error((err instanceof Error ? err.message : null) || "Evidence review failed");
+    } finally {
+      setRunningEIA(false);
+    }
+  }
+
   async function handleStatusUpdate(newStatus: string) {
     if (!caseData || updatingStatus) return;
     setUpdatingStatus(true);
@@ -202,13 +233,16 @@ export default function CaseWorkspace() {
 
   const wfPlan = caseData.workflow_plan;
 
+  const evidenceAssessment = caseData.evidence_assessment as EvidenceAssessment | null | undefined;
+
   const tabs = [
-    { key: "analysis",      label: "Case Analysis" },
-    { key: "investigation", label: "Investigation" },
-    { key: "orchestration", label: "Orchestration" },
-    { key: "evidence",      label: `Evidence (${uploads.length})` },
-    { key: "audit",         label: "Audit Trail" },
-    { key: "workflow",      label: "Workflow" },
+    { key: "analysis",       label: "Case Analysis" },
+    { key: "investigation",  label: "Investigation" },
+    { key: "evidence_review", label: "Evidence Review" },
+    { key: "orchestration",  label: "Case Coordination" },
+    { key: "evidence",       label: `Documents (${uploads.length})` },
+    { key: "audit",          label: "Audit Trail" },
+    { key: "workflow",       label: "Workflow" },
   ] as const;
 
   return (
@@ -415,20 +449,7 @@ export default function CaseWorkspace() {
                 );
                 if (docs.length === 0) return null;
 
-                // Docs the bank/merchant obtains internally — not the customer's responsibility
-                const BANK_OBTAINABLE = new Set([
-                  "Merchant order confirmation",
-                  "Payment gateway reference numbers",
-                  "CCTV request form (if applicable)",
-                  "Device or IP access logs",
-                  "OTP transaction logs",
-                  "Account activity report",
-                  "ATM reference number",
-                  "Merchant delivery confirmation",
-                  "Proof of transaction authorisation",
-                  "Any communication with customer",
-                  "Menu or price list at time of transaction",
-                ]);
+                // BANK_OBTAINABLE is defined at module level above
 
                 const hasUploads = uploads.length > 0;
 
@@ -732,6 +753,250 @@ export default function CaseWorkspace() {
                     )}
                   </Panel>
                 )}
+              </div>
+            );
+          })()}
+
+          {/* ── Evidence Review tab ──────────────────────────────────────── */}
+          {activeTab === "evidence_review" && (() => {
+            const ea = evidenceAssessment;
+
+            if (!ea) return (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <Panel style={{ padding: "2rem", textAlign: "center" }}>
+                  <p style={{ fontSize: "0.8rem", color: "#64748B", marginBottom: "0.5rem" }}>Evidence review not yet conducted.</p>
+                  <p style={{ fontSize: "0.72rem", color: "#475569", marginBottom: "1rem" }}>
+                    Evidence review is conducted automatically when case coordination determines it is required.
+                    You can also trigger it manually below.
+                  </p>
+                  <button
+                    onClick={handleRunEvidenceReview}
+                    disabled={runningEIA}
+                    style={{ fontSize: "0.75rem", fontWeight: 600, padding: "0.5rem 1.25rem", backgroundColor: runningEIA ? "#334155" : "#2563EB", color: "#F8FAFC", border: "none", borderRadius: 4, cursor: runningEIA ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+                  >
+                    {runningEIA && <Loader2 className="w-3 h-3 animate-spin" />}
+                    {runningEIA ? "Running Evidence Review…" : "Re-run Evidence Review"}
+                  </button>
+                </Panel>
+              </div>
+            );
+
+            const strengthColor = ea.evidence_strength === "HIGH" ? "#4ADE80" : ea.evidence_strength === "MEDIUM" ? "#FCD34D" : "#FCA5A5";
+            const strengthBg    = ea.evidence_strength === "HIGH" ? "#F0FDF4" : ea.evidence_strength === "MEDIUM" ? "#FFFBEB" : "#FEF2F2";
+            const strengthBorder = ea.evidence_strength === "HIGH" ? "#BBF7D0" : ea.evidence_strength === "MEDIUM" ? "#FDE68A" : "#FECACA";
+            const strengthTextColor = ea.evidence_strength === "HIGH" ? "#166534" : ea.evidence_strength === "MEDIUM" ? "#92400E" : "#991B1B";
+            const completenessColor = (ea.evidence_completeness ?? 0) >= 80 ? "#15803D" : (ea.evidence_completeness ?? 0) >= 50 ? "#B45309" : "#B91C1C";
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+
+                {/* Fallback banner */}
+                {ea.fallback_mode && (
+                  <div style={{ padding: "0.625rem 1rem", backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 4, display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+                    <AlertTriangle style={{ width: 13, height: 13, color: "#94A3B8", flexShrink: 0, marginTop: 2 }} />
+                    <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>Evidence review completed using standard assessment criteria.</span>
+                  </div>
+                )}
+
+                {/* ── Section 1: Evidence Summary cards ── */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.5rem" }}>
+                  <Panel>
+                    <Label>Completeness</Label>
+                    <div style={{ fontSize: "1.1rem", fontWeight: 700, color: completenessColor, fontFamily: "ui-monospace, monospace" }}>{ea.evidence_completeness ?? "—"}%</div>
+                    <div style={{ marginTop: 4, height: 3, backgroundColor: "#334155", borderRadius: 2 }}>
+                      <div style={{ height: "100%", width: `${ea.evidence_completeness ?? 0}%`, backgroundColor: completenessColor, borderRadius: 2 }} />
+                    </div>
+                  </Panel>
+                  <Panel>
+                    <Label>Consistency</Label>
+                    {(() => {
+                      const realIssues = (ea.consistency_issues ?? []).filter(
+                        (i: string) => !i.toLowerCase().includes("not found")
+                      );
+                      const infoOnly = (ea.consistency_issues ?? []).length > 0 && realIssues.length === 0;
+                      return (
+                        <>
+                          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: realIssues.length > 0 ? "#FCA5A5" : "#4ADE80" }}>
+                            {realIssues.length > 0 ? "Issues Found" : "Consistent"}
+                          </div>
+                          <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>
+                            {realIssues.length > 0
+                              ? `${realIssues.length} mismatch(es)`
+                              : infoOnly ? "Record not found" : "No issues"}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </Panel>
+                  <Panel>
+                    <Label>Investigation</Label>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 700, color: ea.investigation_blocked ? "#FCA5A5" : "#4ADE80" }}>
+                      {ea.investigation_blocked ? "Blocked" : "Can Proceed"}
+                    </div>
+                    <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>
+                      {ea.missing_documents?.length ? `${ea.missing_documents.length} doc(s) missing` : "All docs present"}
+                    </div>
+                  </Panel>
+                  <Panel>
+                    <Label>Human Review</Label>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 700, color: ea.manual_evidence_review ? "#FCA5A5" : "#4ADE80" }}>
+                      {ea.manual_evidence_review ? "Required" : "Not Required"}
+                    </div>
+                  </Panel>
+                </div>
+
+                {/* ── Section 2: Evidence Strength ── */}
+                <Panel style={{ backgroundColor: strengthBg, border: `1px solid ${strengthBorder}` }}>
+                  <SectionTitle>Evidence Strength</SectionTitle>
+                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                        <span style={{ fontSize: "0.7rem", color: strengthTextColor, fontWeight: 600 }}>{ea.evidence_strength}</span>
+                        <span style={{ fontSize: "0.7rem", color: strengthTextColor, fontFamily: "ui-monospace, monospace", fontWeight: 700 }}>
+                          {Math.round((ea.evidence_strength_score ?? 0) * 100)}%
+                        </span>
+                      </div>
+                      <div style={{ height: 6, backgroundColor: "rgba(0,0,0,0.08)", borderRadius: 3 }}>
+                        <div style={{ height: "100%", width: `${Math.round((ea.evidence_strength_score ?? 0) * 100)}%`, backgroundColor: strengthColor, borderRadius: 3, transition: "width 0.4s" }} />
+                      </div>
+                    </div>
+                  </div>
+                  {ea.review_recommendation && (
+                    <p style={{ fontSize: "0.75rem", color: strengthTextColor, marginTop: "0.75rem", fontWeight: 500, lineHeight: 1.5 }}>
+                      {ea.review_recommendation}
+                    </p>
+                  )}
+                </Panel>
+
+                {/* ── Section 3: Missing Documents (customer-obtainable only) ── */}
+                {(() => {
+                  const customerMissing = (ea.missing_documents ?? []).filter(
+                    (d: string) => !BANK_OBTAINABLE.has(d)
+                  );
+                  return customerMissing.length > 0 ? (
+                    <Panel style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA" }}>
+                      <SectionTitle>Missing Documents</SectionTitle>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.375rem" }}>
+                        {customerMissing.map((doc: string, i: number) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.625rem", backgroundColor: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 3 }}>
+                            <FileText style={{ width: 11, height: 11, color: "#B91C1C", flexShrink: 0 }} />
+                            <span style={{ fontSize: "0.7rem", color: "#991B1B" }}>{doc}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </Panel>
+                  ) : (
+                    <Panel style={{ backgroundColor: "#F0FDF4", border: "1px solid #BBF7D0", display: "flex", alignItems: "center", gap: "0.625rem" }}>
+                      <CheckCircle style={{ width: 14, height: 14, color: "#15803D", flexShrink: 0 }} />
+                      <p style={{ fontSize: "0.72rem", color: "#166534", fontWeight: 500 }}>No missing documents — all required evidence is present.</p>
+                    </Panel>
+                  );
+                })()}
+
+                {/* ── Section 4: Recommended Document Requests (customer-obtainable only) ── */}
+                {(ea.recommended_document_requests ?? []).filter((d: string) => !BANK_OBTAINABLE.has(d)).length > 0 && (
+                  <Panel>
+                    <SectionTitle>Recommended Document Requests</SectionTitle>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      {(ea.recommended_document_requests!).filter((doc: string) => !BANK_OBTAINABLE.has(doc)).map((doc: string, i: number) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem", backgroundColor: "#111827", border: "1px solid #334155", borderRadius: 3 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <FileText style={{ width: 12, height: 12, color: "#2563EB", flexShrink: 0 }} />
+                            <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>{doc}</span>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              try {
+                                await createDocumentRequest(caseData.case_id, "system", doc, `Required for evidence review`, undefined);
+                                toast.success(`Request created: ${doc}`);
+                              } catch {
+                                toast.error("Failed to create request");
+                              }
+                            }}
+                            style={{ fontSize: "0.65rem", fontWeight: 600, padding: "0.2rem 0.625rem", backgroundColor: "#1D4ED8", color: "#F8FAFC", border: "none", borderRadius: 3, cursor: "pointer", whiteSpace: "nowrap" }}
+                          >
+                            Create Request
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: "0.65rem", color: "#475569", marginTop: "0.5rem", borderTop: "1px solid #334155", paddingTop: "0.5rem" }}>
+                      Creating a request will notify the customer to submit the document.
+                    </p>
+                  </Panel>
+                )}
+
+                {/* ── Section 5: Consistency Issues ── */}
+                {(ea.consistency_issues?.length ?? 0) > 0 && (() => {
+                  const realIssues = (ea.consistency_issues ?? []).filter(
+                    (i: string) => !i.toLowerCase().includes("not found")
+                  );
+                  const infoIssues = (ea.consistency_issues ?? []).filter(
+                    (i: string) => i.toLowerCase().includes("not found")
+                  );
+                  return (
+                    <>
+                      {realIssues.length > 0 && (
+                        <Panel style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
+                          <SectionTitle>Consistency Issues</SectionTitle>
+                          <ul style={{ display: "flex", flexDirection: "column", gap: "0.375rem", margin: 0, padding: 0, listStyle: "none" }}>
+                            {realIssues.map((issue: string, i: number) => (
+                              <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", fontSize: "0.72rem", color: "#92400E" }}>
+                                <span style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: "#B45309", flexShrink: 0, marginTop: 5 }} />
+                                {issue}
+                              </li>
+                            ))}
+                          </ul>
+                        </Panel>
+                      )}
+                      {infoIssues.length > 0 && (
+                        <Panel style={{ backgroundColor: "#1E293B", border: "1px solid #334155" }}>
+                          <SectionTitle>Consistency Check Note</SectionTitle>
+                          <ul style={{ display: "flex", flexDirection: "column", gap: "0.375rem", margin: 0, padding: 0, listStyle: "none" }}>
+                            {infoIssues.map((issue: string, i: number) => (
+                              <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", fontSize: "0.72rem", color: "#64748B" }}>
+                                <span style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: "#475569", flexShrink: 0, marginTop: 5 }} />
+                                {issue}
+                              </li>
+                            ))}
+                          </ul>
+                        </Panel>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {/* ── Section 6: Evidence Findings ── */}
+                {(ea.evidence_summary?.length ?? 0) > 0 && (
+                  <Panel>
+                    <SectionTitle>Evidence Findings</SectionTitle>
+                    <ul style={{ display: "flex", flexDirection: "column", gap: "0.4rem", margin: 0, padding: 0, listStyle: "none" }}>
+                      {ea.evidence_summary!.map((finding: string, i: number) => (
+                        <li key={i} style={{ display: "flex", gap: "0.625rem", fontSize: "0.72rem", color: "#94A3B8" }}>
+                          <span style={{ flexShrink: 0, width: 18, height: 18, borderRadius: 3, backgroundColor: "#111827", border: "1px solid #334155", color: "#64748B", fontSize: "0.6rem", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+                          <span style={{ lineHeight: 1.6, paddingTop: 1 }}>{finding}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p style={{ fontSize: "0.65rem", color: "#475569", marginTop: 8, borderTop: "1px solid #334155", paddingTop: 8 }}>
+                      Evidence findings are based on document requests and case data — not a legal conclusion.
+                    </p>
+                  </Panel>
+                )}
+
+
+                {/* Re-run button */}
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={handleRunEvidenceReview}
+                    disabled={runningEIA}
+                    style={{ fontSize: "0.7rem", fontWeight: 600, padding: "0.4rem 1rem", backgroundColor: runningEIA ? "#334155" : "#1E293B", color: "#94A3B8", border: "1px solid #334155", borderRadius: 4, cursor: runningEIA ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+                  >
+                    {runningEIA && <Loader2 className="w-3 h-3 animate-spin" />}
+                    {runningEIA ? "Running Evidence Review…" : "Re-run Evidence Review"}
+                  </button>
+                </div>
+
               </div>
             );
           })()}

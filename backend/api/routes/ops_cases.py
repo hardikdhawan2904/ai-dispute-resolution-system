@@ -433,6 +433,64 @@ async def delete_case(case_id: str, db: Session = Depends(get_db)):
     db.commit()
 
 
+# ── Evidence assessment (Agent 4 — EIA) ──────────────────────────────────────
+
+@router.get("/{case_id}/evidence-assessment")
+def get_evidence_assessment(case_id: str, db: Session = Depends(get_db)):
+    """Return the stored evidence assessment from Agent 4 (EIA) for a case."""
+    case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+    return {
+        "case_id":            case_id,
+        "evidence_assessment": getattr(case, "evidence_assessment", None),
+    }
+
+
+@router.post("/{case_id}/run-evidence-agent")
+async def run_evidence_agent_endpoint(case_id: str):
+    """
+    Manually trigger Agent 4 (EIA) for an existing case.
+    Runs in a thread-pool executor so the event loop stays free during inference.
+    """
+    from database.database import SessionLocal as _SL
+    from workflows.dispute_workflow import _save_evidence_to_db
+    from agents.evidence_agent import run_evidence_agent as _run_eia
+
+    # Verify case exists
+    with _SL() as db_read:
+        case_row = db_read.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
+        if not case_row:
+            raise HTTPException(status_code=404, detail="Case not found")
+        workflow_plan = case_row.workflow_plan
+
+    def _run():
+        return _run_eia(case_id)
+
+    try:
+        evidence_assessment = await asyncio.get_running_loop().run_in_executor(
+            analysis_executor, _run
+        )
+    except GroqRateLimitError as exc:
+        raise HTTPException(status_code=503, detail="Groq API token limit exceeded.") from exc
+    except RetryError as exc:
+        raise HTTPException(status_code=503, detail="AI evidence service temporarily unavailable.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Evidence agent failed: {type(exc).__name__}: {str(exc)[:300]}") from exc
+
+    # Save evidence assessment and update workflow plan
+    _save_evidence_to_db(case_id, evidence_assessment, workflow_plan or {})
+
+    # Fetch updated case for response
+    with _SL() as db_read:
+        case_row = db_read.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
+        return {
+            "case_id":            case_id,
+            "evidence_assessment": evidence_assessment,
+            "case":               case_row.to_dict() if case_row else None,
+        }
+
+
 @router.post("/search")
 async def search_cases(body: CaseSearchRequest, db: Session = Depends(get_db)):
     result = case_search_service.search_cases(

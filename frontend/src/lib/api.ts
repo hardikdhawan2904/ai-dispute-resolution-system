@@ -295,6 +295,34 @@ export async function analyseUploads(caseId: string): Promise<{ analysed: number
   return res.data;
 }
 
+// ── Ops — Evidence assessment (Agent 4 — EIA) ────────────────────────────────
+
+import type { EvidenceAssessment } from "@/types";
+
+export async function getEvidenceAssessment(caseId: string): Promise<EvidenceAssessment | null> {
+  try {
+    const res = await api.get<{ case_id: string; evidence_assessment: EvidenceAssessment | null }>(
+      `/api/ops/cases/${caseId}/evidence-assessment`
+    );
+    return res.data.evidence_assessment;
+  } catch {
+    return null;
+  }
+}
+
+export async function runEvidenceAgent(caseId: string): Promise<{
+  case_id: string;
+  evidence_assessment: EvidenceAssessment;
+  case: unknown;
+}> {
+  const res = await api.post(
+    `/api/ops/cases/${caseId}/run-evidence-agent`,
+    {},
+    { timeout: 120_000 }
+  );
+  return res.data;
+}
+
 // ── Ops — Advanced search ─────────────────────────────────────────────────────
 
 export async function searchCases(params: {

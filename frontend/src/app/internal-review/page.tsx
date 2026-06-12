@@ -97,6 +97,32 @@ export default function InternalReviewPage() {
   const pendingDocs  = cases.filter(c => c.status === "Pending Documents").length;
   const resolvedCount= cases.filter(c => c.status === "Resolved").length;
 
+  // Agent 4 — EIA evidence metrics (derived from loaded cases)
+  const evidencePending = cases.filter(c => {
+    const wf = c.workflow_plan as { required_agents?: string[]; completed_agents?: string[] } | null;
+    if (!wf) return false;
+    const required  = wf.required_agents ?? [];
+    const completed = wf.completed_agents ?? [];
+    return required.includes("EVIDENCE_AGENT") && !completed.includes("EVIDENCE_AGENT") && !c.evidence_assessment;
+  }).length;
+
+  const evidenceCompleted = cases.filter(c => {
+    const wf = c.workflow_plan as { required_agents?: string[]; completed_agents?: string[] } | null;
+    if (!wf) return false;
+    return (wf.required_agents ?? []).includes("EVIDENCE_AGENT") && !!c.evidence_assessment;
+  }).length;
+
+  const blockedInvestigations = cases.filter(c =>
+    (c.evidence_assessment as { investigation_blocked?: boolean } | null)?.investigation_blocked
+  ).length;
+
+  const completenessValues = cases
+    .map(c => (c.evidence_assessment as { evidence_completeness?: number } | null)?.evidence_completeness)
+    .filter((v): v is number => typeof v === "number" && v > 0);
+  const avgCompleteness = completenessValues.length
+    ? Math.round(completenessValues.reduce((a, b) => a + b, 0) / completenessValues.length)
+    : null;
+
   return (
     <div>
       {/* Page header */}
@@ -140,6 +166,35 @@ export default function InternalReviewPage() {
           </div>
         ))}
       </div>
+
+      {/* Evidence metrics strip — only shown when any evidence data exists */}
+      {(evidencePending > 0 || evidenceCompleted > 0 || blockedInvestigations > 0 || avgCompleteness !== null) && (
+        <div style={{ marginBottom: "1.25rem" }}>
+          <div style={{ fontSize: "0.6rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", color: "#475569", marginBottom: "0.5rem" }}>
+            Evidence Review
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "0.75rem" }}>
+            <div style={{ backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 4, padding: "0.75rem 1rem" }}>
+              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: evidencePending > 0 ? "#FCD34D" : "#4ADE80", letterSpacing: "-0.02em" }}>{evidencePending}</div>
+              <div style={{ fontSize: "0.6rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748B", marginTop: 3 }}>Awaiting Evidence Review</div>
+            </div>
+            <div style={{ backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 4, padding: "0.75rem 1rem" }}>
+              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "#4ADE80", letterSpacing: "-0.02em" }}>{evidenceCompleted}</div>
+              <div style={{ fontSize: "0.6rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748B", marginTop: 3 }}>Evidence Reviews Done</div>
+            </div>
+            <div style={{ backgroundColor: "#1E293B", border: blockedInvestigations > 0 ? "1px solid #FECACA" : "1px solid #334155", borderRadius: 4, padding: "0.75rem 1rem" }}>
+              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: blockedInvestigations > 0 ? "#FCA5A5" : "#4ADE80", letterSpacing: "-0.02em" }}>{blockedInvestigations}</div>
+              <div style={{ fontSize: "0.6rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748B", marginTop: 3 }}>Blocked Investigations</div>
+            </div>
+            <div style={{ backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 4, padding: "0.75rem 1rem" }}>
+              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: avgCompleteness !== null ? (avgCompleteness >= 70 ? "#4ADE80" : avgCompleteness >= 40 ? "#FCD34D" : "#FCA5A5") : "#64748B", letterSpacing: "-0.02em", fontFamily: "ui-monospace, monospace" }}>
+                {avgCompleteness !== null ? `${avgCompleteness}%` : "—"}
+              </div>
+              <div style={{ fontSize: "0.6rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748B", marginTop: 3 }}>Avg Evidence Completeness</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Live incoming */}
       {liveQueue.length > 0 && (

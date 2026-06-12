@@ -58,6 +58,12 @@ def _apply_column_migrations() -> None:
             conn.commit()
             db_logger.info("Migration applied: dispute_cases.workflow_plan column added.")
 
+        # Agent 4 — EIA: evidence_assessment column
+        if "evidence_assessment" not in existing_cols:
+            conn.execute(text("ALTER TABLE dispute_cases ADD COLUMN evidence_assessment JSON"))
+            conn.commit()
+            db_logger.info("Migration applied: dispute_cases.evidence_assessment column added.")
+
         # Performance indexes for list/filter queries
         existing_indexes = {idx["name"] for idx in inspector.get_indexes("dispute_cases")}
         index_defs = [

@@ -54,6 +54,9 @@ class DisputeWorkflowState(TypedDict):
     # Workflow plan (Agent 3 — WOA output)
     orchestration_output: Optional[dict]
 
+    # Evidence assessment (Agent 4 — EIA output)
+    evidence_output: Optional[dict]
+
     # Final output
     final_case: Optional[dict]
 
@@ -344,6 +347,45 @@ def _save_agent3_to_db(case_id: str, workflow_plan: dict) -> None:
         db.close()
 
 
+def _save_evidence_to_db(case_id: str, evidence_assessment: dict, workflow_plan: dict) -> None:
+    """Intermediate DB save after Agent 4 — evidence assessment and updated workflow plan."""
+    if not case_id:
+        return
+    from database.database import SessionLocal
+    from database.models import DisputeCase
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
+        if case:
+            case.evidence_assessment = evidence_assessment
+            # Update workflow_plan to mark EVIDENCE_AGENT as completed
+            if isinstance(workflow_plan, dict) and workflow_plan:
+                updated_plan = dict(workflow_plan)
+                completed = list(updated_plan.get("completed_agents") or [])
+                if "EVIDENCE_AGENT" not in completed:
+                    completed.append("EVIDENCE_AGENT")
+                updated_plan["completed_agents"] = completed
+                # Advance next_agent past EVIDENCE_AGENT
+                remaining = [
+                    a for a in (updated_plan.get("workflow_path") or [])
+                    if a not in completed
+                ]
+                updated_plan["remaining_agents"] = remaining
+                updated_plan["next_agent"] = remaining[0] if remaining else None
+                updated_plan["workflow_status"] = (
+                    "IN_PROGRESS" if remaining else
+                    ("ESCALATED" if updated_plan.get("escalation_required") else "COMPLETED")
+                )
+                case.workflow_plan = updated_plan
+            case.current_stage = "agent4_complete"
+            db.commit()
+    except Exception as exc:
+        workflow_logger.warning(f"Intermediate Agent 4 DB save failed for {case_id}: {exc}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def dispute_understanding_node(state: DisputeWorkflowState) -> dict:
     """
     Invokes the Dispute Understanding Agent (Groq LLM).
@@ -561,6 +603,63 @@ def orchestration_node(state: DisputeWorkflowState) -> dict:
         }
 
 
+def evidence_node(state: DisputeWorkflowState) -> dict:
+    """
+    Invokes the Evidence Intelligence Agent (EIA, Agent 4).
+    Only runs when WOA has routed to EVIDENCE_AGENT.
+    Reads all case data from DB, assesses evidence completeness/strength/consistency,
+    and saves the evidence_assessment to DB.
+    """
+    from agents.evidence_agent import run_evidence_agent
+
+    start = time.time()
+    node  = "evidence"
+
+    try:
+        evidence_assessment = run_evidence_agent(state.get("case_id", ""))
+        # Intermediate save — evidence assessment and updated workflow plan
+        orchestration_output = state.get("orchestration_output") or {}
+        _save_evidence_to_db(state.get("case_id", ""), evidence_assessment, orchestration_output)
+        log_workflow_event(
+            workflow_logger,
+            event="NODE_EVIDENCE_COMPLETE",
+            stage=node,
+            case_id=state.get("case_id"),
+            extra={
+                "evidence_completeness": evidence_assessment.get("evidence_completeness"),
+                "evidence_strength":     evidence_assessment.get("evidence_strength"),
+                "investigation_blocked": evidence_assessment.get("investigation_blocked"),
+                "missing_docs":          len(evidence_assessment.get("missing_documents", [])),
+            },
+        )
+        return {
+            "evidence_output": evidence_assessment,
+            "current_stage":   node,
+            "execution_trace": _trace(
+                node, start, True,
+                f"strength={evidence_assessment.get('evidence_strength')} "
+                f"completeness={evidence_assessment.get('evidence_completeness')} "
+                f"blocked={evidence_assessment.get('investigation_blocked')}"
+            ),
+        }
+    except Exception as exc:
+        workflow_logger.warning(f"Evidence agent failed: {exc}", exc_info=True)
+        return {
+            "evidence_output": None,
+            "current_stage":   node,
+            "execution_trace": _trace(node, start, False, f"agent failed: {exc}"),
+        }
+
+
+def route_after_orchestration(state: DisputeWorkflowState) -> str:
+    """Route to evidence_node only when WOA designates EVIDENCE_AGENT as the immediate
+    next step. Respects dependency ordering — if FRAUD_AGENT must run first, WOA sets
+    next_agent=FRAUD_AGENT and EIA is skipped for this run (analyst triggers it later)."""
+    wf_plan    = state.get("orchestration_output") or {}
+    next_agent = wf_plan.get("next_agent") if isinstance(wf_plan, dict) else None
+    return "run_evidence" if next_agent == "EVIDENCE_AGENT" else "skip_evidence"
+
+
 def structured_output_node(state: DisputeWorkflowState) -> dict:
     """
     Merge intake data + AI analysis into the canonical DisputeCase dict.
@@ -614,6 +713,8 @@ def structured_output_node(state: DisputeWorkflowState) -> dict:
         "investigation_plan": state.get("investigation_output"),
         # Workflow plan (Agent 3 — WOA)
         "workflow_plan": state.get("orchestration_output"),
+        # Evidence assessment (Agent 4 — EIA)
+        "evidence_assessment": state.get("evidence_output"),
         # Workflow
         "status": "Dispute Raised",
         "workflow_ready": True,
@@ -684,6 +785,7 @@ def build_dispute_workflow() -> Any:
     graph.add_node("reasoning",            reasoning_node)
     graph.add_node("investigation",        investigation_node)
     graph.add_node("orchestration",        orchestration_node)
+    graph.add_node("evidence",             evidence_node)
     graph.add_node("structured_output",    structured_output_node)
     graph.add_node("invalid_submission",   invalid_submission_node)
 
@@ -714,8 +816,17 @@ def build_dispute_workflow() -> Any:
     graph.add_edge("dispute_understanding", "reasoning")
     graph.add_edge("reasoning",             "investigation")
     graph.add_edge("investigation",         "orchestration")
-    graph.add_edge("orchestration",         "structured_output")
-    graph.add_edge("structured_output",     END)
+    # After orchestration: route to evidence agent if WOA requires it
+    graph.add_conditional_edges(
+        "orchestration",
+        route_after_orchestration,
+        {
+            "run_evidence":  "evidence",
+            "skip_evidence": "structured_output",
+        },
+    )
+    graph.add_edge("evidence",          "structured_output")
+    graph.add_edge("structured_output", END)
     graph.add_edge("pending_documents", END)
     graph.add_edge("invalid_submission", END)
 
@@ -747,6 +858,7 @@ def run_dispute_workflow(dispute_input: dict, document_texts: Optional[List[str]
         "ai_analysis":          None,
         "investigation_output": None,
         "orchestration_output": None,
+        "evidence_output":      None,
         "final_case":           None,
         "execution_trace":      [],
         "current_stage":        "start",

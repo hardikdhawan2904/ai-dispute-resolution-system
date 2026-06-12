@@ -69,6 +69,43 @@ def get_ops_analytics(db: Session) -> dict:
     ).count()
     resolution_rate = round(resolved / total * 100, 1) if total else 0.0
 
+    # ── Agent 4 — EIA evidence metrics ───────────────────────────────────────
+    # Cases where EIA is required but not yet run (EVIDENCE_AGENT is next_agent)
+    all_open = db.query(DisputeCase).filter(
+        DisputeCase.status.in_(["Dispute Raised", "Under Investigation"])
+    ).all()
+
+    evidence_pending = 0
+    evidence_completed = 0
+    blocked_investigations = 0
+    completeness_values: List[float] = []
+
+    for case in all_open:
+        wf = case.workflow_plan or {}
+        ea = case.evidence_assessment or {}
+
+        if isinstance(wf, dict):
+            next_agent  = wf.get("next_agent")
+            req_agents  = wf.get("required_agents") or []
+            comp_agents = wf.get("completed_agents") or []
+
+            if "EVIDENCE_AGENT" in req_agents:
+                if "EVIDENCE_AGENT" in comp_agents or isinstance(ea, dict) and ea:
+                    evidence_completed += 1
+                else:
+                    evidence_pending += 1
+
+        if isinstance(ea, dict) and ea:
+            if ea.get("investigation_blocked"):
+                blocked_investigations += 1
+            comp = ea.get("evidence_completeness")
+            if isinstance(comp, (int, float)) and comp > 0:
+                completeness_values.append(float(comp))
+
+    avg_evidence_completeness = round(
+        sum(completeness_values) / len(completeness_values), 1
+    ) if completeness_values else 0.0
+
     return {
         "total_cases": total,
         "open_cases": open_cases,
@@ -85,4 +122,9 @@ def get_ops_analytics(db: Session) -> dict:
         "by_status": by_status,
         "by_priority": by_priority,
         "by_category": by_category,
+        # Agent 4 — EIA evidence metrics
+        "evidence_reviews_pending":    evidence_pending,
+        "evidence_reviews_completed":  evidence_completed,
+        "blocked_investigations":      blocked_investigations,
+        "avg_evidence_completeness":   avg_evidence_completeness,
     }

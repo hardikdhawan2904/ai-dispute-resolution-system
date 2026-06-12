@@ -75,3 +75,8 @@ class OpsAnalyticsResponse(BaseModel):
     by_status: dict
     by_priority: dict
     by_category: dict
+    # Agent 4 — EIA evidence metrics
+    evidence_reviews_pending:   int = 0
+    evidence_reviews_completed: int = 0
+    blocked_investigations:     int = 0
+    avg_evidence_completeness:  float = 0.0
