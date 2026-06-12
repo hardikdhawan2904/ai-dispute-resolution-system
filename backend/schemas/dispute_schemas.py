@@ -145,6 +145,8 @@ class DisputeCaseResponse(BaseModel):
     fraud_reasoning_brief: Optional[dict] = None
     fraud_probability: float = 0.0
     fraud_risk_level: str = "LOW"
+    # Evidence Intelligence Agent
+    evidence_assessment: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 

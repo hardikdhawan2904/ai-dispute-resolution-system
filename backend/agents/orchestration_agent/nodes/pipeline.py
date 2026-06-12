@@ -192,6 +192,11 @@ def finalize_node(state: OrchestrationAgentState) -> dict:
     # results; default to empty list when absent.
     if not isinstance(parsed.get("completed_agents"), list):
         parsed["completed_agents"] = []
+    else:
+        parsed["completed_agents"] = list(parsed["completed_agents"])
+
+    if case_input.get("fraud_reasoning_brief") and "FRAUD_AGENT" not in parsed["completed_agents"]:
+        parsed["completed_agents"].append("FRAUD_AGENT")
 
     # workflow_status — server-stamped deterministically from execution state.
     # LLM's WAITING is honoured (signals a blocking dependency it detected);

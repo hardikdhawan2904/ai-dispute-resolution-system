@@ -508,6 +508,8 @@ def _list_case_dict(case: dict) -> dict:
         "fraud_reasoning_brief": None,
         "fraud_probability":     case.get("fraud_probability") if case.get("fraud_probability") is not None else 0.0,
         "fraud_risk_level":      case.get("fraud_risk_level") if case.get("fraud_risk_level") is not None else "LOW",
+        # Evidence Agent
+        "evidence_assessment":   None,
     }
 
 
@@ -568,4 +570,5 @@ def _safe_case_dict(case: dict) -> dict:
         "fraud_reasoning_brief": case.get("fraud_reasoning_brief"),
         "fraud_probability": case.get("fraud_probability") if case.get("fraud_probability") is not None else 0.0,
         "fraud_risk_level": case.get("fraud_risk_level") if case.get("fraud_risk_level") is not None else "LOW",
+        "evidence_assessment": case.get("evidence_assessment"),
     }
