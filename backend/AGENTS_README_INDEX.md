@@ -132,25 +132,30 @@ CUSTOMER DISPUTE SUBMISSION
     │  priority, tags     │ Confidence
     └─────────┬───────────┘
               │
-       ┌──────┴──────┬──────────┐
-       ▼             ▼          ▼
-   ┌────────┐  ┌──────────┐  ┌──────────┐
-   │Agent 2 │  │ Agent 3  │  │ Agent 4  │
-   │  IIA   │  │   FRA    │  │   EIA    │
-   │History │  │  Fraud   │  │Evidence  │
-   └────────┘  │ Patterns │  │Verify    │
-        │      └──────────┘  └──────────┘
-        └──────────┬──────────────┘
-                   ▼
-          ┌───────────────────┐
-          │  Agent 5: WOA     │ Route to
-          │  Orchestration    │ Teams
-          │  Case Routing     │ Set SLA
-          └───────────────────┘
-                   │
-                   ▼
-          INVESTIGATION QUEUE
-         (Fraud/Merchant/Compliance)
+              ▼
+    ┌─────────────────────┐
+    │  Agent 2: IIA       │ History Analysis
+    │  investigation_plan │ Risk Profiling
+    └─────────┬───────────┘
+              │
+              ▼
+    ┌─────────────────────┐
+    │  Agent 5: WOA       │ Case Orchestration
+    │  workflow_plan      │ Routing Decisions
+    └─────────┬───────────┘
+              │
+        ┌─────┴─────┐
+        ▼           ▼
+    ┌────────┐  ┌──────────┐
+    │Agent 3 │  │ Agent 4  │
+    │  FRA   │  │   EIA    │
+    │ Fraud  │  │Evidence  │
+    └────┬───┘  └────┬─────┘
+         │           │
+         └─────┬─────┘
+               ▼
+      INVESTIGATION QUEUE
+     (Fraud/Merchant/Compliance)
 ```
 
 ---

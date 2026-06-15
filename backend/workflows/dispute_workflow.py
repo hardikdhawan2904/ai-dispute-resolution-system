@@ -354,13 +354,14 @@ def _save_agent3_to_db(case_id: str, workflow_plan: dict) -> None:
         db.close()
 
 
-def _save_fraud_reasoning_to_db(case_id: str, fraud_reasoning_brief: dict) -> None:
+def _save_fraud_reasoning_to_db(case_id: str, fraud_reasoning_brief: dict, workflow_plan: Optional[dict] = None) -> Optional[dict]:
     """Intermediate DB save after Fraud Reasoning Agent."""
     if not case_id:
-        return
+        return workflow_plan
     from database.database import SessionLocal
     from database.models import DisputeCase
     db = SessionLocal()
+    updated_plan = None
     try:
         case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
         if case:
@@ -373,21 +374,44 @@ def _save_fraud_reasoning_to_db(case_id: str, fraud_reasoning_brief: dict) -> No
             case.behavioral_risk_score = fraud_reasoning_brief.get("behavioral_risk_score", 0.0)
             case.identity_status       = fraud_reasoning_brief.get("identity_verification", "PENDING")
             case.current_stage         = "fraud_reasoning_complete"
+
+            # Update workflow_plan to mark FRAUD_AGENT as completed
+            plan_source = workflow_plan or case.workflow_plan
+            if plan_source:
+                updated_plan = dict(plan_source)
+                completed = list(updated_plan.get("completed_agents") or [])
+                if "FRAUD_AGENT" not in completed:
+                    completed.append("FRAUD_AGENT")
+                updated_plan["completed_agents"] = completed
+                # Advance next_agent past FRAUD_AGENT
+                remaining = [
+                    a for a in (updated_plan.get("workflow_path") or [])
+                    if a not in completed
+                ]
+                updated_plan["remaining_agents"] = remaining
+                updated_plan["next_agent"] = remaining[0] if remaining else None
+                updated_plan["workflow_status"] = (
+                    "IN_PROGRESS" if remaining else
+                    ("ESCALATED" if updated_plan.get("escalation_required") else "COMPLETED")
+                )
+                case.workflow_plan = updated_plan
             db.commit()
     except Exception as exc:
         workflow_logger.warning(f"Intermediate Fraud Reasoning DB save failed for {case_id}: {exc}")
         db.rollback()
     finally:
         db.close()
+    return updated_plan if updated_plan is not None else workflow_plan
 
 
-def _save_evidence_to_db(case_id: str, evidence_assessment: dict, workflow_plan: dict) -> None:
+def _save_evidence_to_db(case_id: str, evidence_assessment: dict, workflow_plan: dict) -> dict:
     """Intermediate DB save after Agent 4 — evidence assessment and updated workflow plan."""
     if not case_id:
-        return
+        return workflow_plan
     from database.database import SessionLocal
     from database.models import DisputeCase
     db = SessionLocal()
+    updated_plan = None
     try:
         case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
         if case:
@@ -418,6 +442,7 @@ def _save_evidence_to_db(case_id: str, evidence_assessment: dict, workflow_plan:
         db.rollback()
     finally:
         db.close()
+    return updated_plan if updated_plan is not None else workflow_plan
 
 
 def fraud_reasoning_node(state: DisputeWorkflowState) -> dict:
@@ -433,7 +458,11 @@ def fraud_reasoning_node(state: DisputeWorkflowState) -> dict:
             state["dispute_input"],
             case_id=state.get("case_id"),
         )
-        _save_fraud_reasoning_to_db(state.get("case_id", ""), fraud_output)
+        updated_wf_plan = _save_fraud_reasoning_to_db(
+            state.get("case_id", ""),
+            fraud_output,
+            state.get("orchestration_output"),
+        )
         log_workflow_event(
             workflow_logger,
             event="NODE_FRAUD_REASONING_COMPLETE",
@@ -447,9 +476,10 @@ def fraud_reasoning_node(state: DisputeWorkflowState) -> dict:
             },
         )
         return {
-            "fraud_output":    fraud_output,
-            "trust_output":    fraud_output,
-            "current_stage":   node,
+            "fraud_output":         fraud_output,
+            "trust_output":         fraud_output,
+            "orchestration_output": updated_wf_plan,
+            "current_stage":        node,
             "execution_trace": _trace(
                 node, start, True,
                 f"probability={fraud_output.get('fraud_probability')} risk={fraud_output.get('fraud_risk_level')}",
@@ -696,7 +726,7 @@ def evidence_node(state: DisputeWorkflowState) -> dict:
         evidence_assessment = run_evidence_agent(state.get("case_id", ""))
         # Intermediate save — evidence assessment and updated workflow plan
         orchestration_output = state.get("orchestration_output") or {}
-        _save_evidence_to_db(state.get("case_id", ""), evidence_assessment, orchestration_output)
+        updated_wf_plan = _save_evidence_to_db(state.get("case_id", ""), evidence_assessment, orchestration_output)
         log_workflow_event(
             workflow_logger,
             event="NODE_EVIDENCE_COMPLETE",
@@ -710,8 +740,9 @@ def evidence_node(state: DisputeWorkflowState) -> dict:
             },
         )
         return {
-            "evidence_output": evidence_assessment,
-            "current_stage":   node,
+            "evidence_output":      evidence_assessment,
+            "orchestration_output": updated_wf_plan,
+            "current_stage":        node,
             "execution_trace": _trace(
                 node, start, True,
                 f"strength={evidence_assessment.get('evidence_strength')} "
@@ -729,12 +760,14 @@ def evidence_node(state: DisputeWorkflowState) -> dict:
 
 
 def route_after_orchestration(state: DisputeWorkflowState) -> str:
-    """Route to evidence_node only when WOA designates EVIDENCE_AGENT as the immediate
-    next step. Respects dependency ordering — if FRAUD_AGENT must run first, WOA sets
-    next_agent=FRAUD_AGENT and EIA is skipped for this run (analyst triggers it later)."""
+    """Route to specialist agents dynamically based on the WOA orchestration plan."""
     wf_plan    = state.get("orchestration_output") or {}
     next_agent = wf_plan.get("next_agent") if isinstance(wf_plan, dict) else None
-    return "run_evidence" if next_agent == "EVIDENCE_AGENT" else "skip_evidence"
+    if next_agent == "FRAUD_AGENT":
+        return "run_fraud"
+    elif next_agent == "EVIDENCE_AGENT":
+        return "run_evidence"
+    return "skip_all"
 
 
 def structured_output_node(state: DisputeWorkflowState) -> dict:
@@ -895,25 +928,26 @@ def build_dispute_workflow() -> Any:
         "document_check",
         route_after_document_check,
         {
-            "sufficient":   "fraud_reasoning",
+            "sufficient":   "dispute_understanding",
             "insufficient": "pending_documents",
         },
     )
 
-    graph.add_edge("fraud_reasoning", "dispute_understanding")
     graph.add_edge("dispute_understanding", "reasoning")
     graph.add_edge("reasoning",             "investigation")
     graph.add_edge("investigation",         "orchestration")
-    # After orchestration: route to evidence agent if WOA requires it
+    # After orchestration: route to specialist agents dynamically
     graph.add_conditional_edges(
         "orchestration",
         route_after_orchestration,
         {
+            "run_fraud":     "fraud_reasoning",
             "run_evidence":  "evidence",
-            "skip_evidence": "structured_output",
+            "skip_all":      "structured_output",
         },
     )
-    graph.add_edge("evidence",          "structured_output")
+    graph.add_edge("fraud_reasoning",   "orchestration")
+    graph.add_edge("evidence",          "orchestration")
     graph.add_edge("structured_output", END)
     graph.add_edge("pending_documents", END)
     graph.add_edge("invalid_submission", END)

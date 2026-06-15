@@ -9,7 +9,7 @@
 
 ## 🎯 Purpose
 
-FRIA is the behavioral security audit engine of the system. It runs early in the intake workflow to analyze transactions and customer history to determine fraud probability and verify user trust. The agent calls **6 database-backed tools** to check:
+FRIA is the behavioral security audit engine of the system. It runs dynamically after the Orchestration Agent (Agent 5) when scheduled in the workflow execution plan to analyze transactions and customer history to determine fraud probability and verify user trust. The agent calls **6 database-backed tools** to check:
 - **Transaction Timing Anomalies**: Late-night transactions (11 PM - 5 AM I4C fraud window).
 - **Geographic Velocity Anomalies**: Physical impossibility of travel between consecutive transactions.
 - **Spending Behavior Outliers**: Z-score statistical deviations in purchase amounts.
@@ -45,7 +45,7 @@ FRIA synthesizes these checks into a detailed **Fraud & Trust Brief** to calibra
    stamp DB metadata, save results)
 ```
 
-FRIA executes early in the workflow at the `fraud_reasoning` node. It processes case and transaction data directly from the DB, saves the behavioral fraud analytics brief back to the DB, and passes control to the `dispute_understanding` node (Agent 1).
+FRIA executes dynamically at the `fraud_reasoning` node when directed by the orchestrator. It processes case and transaction data directly from the DB, saves the behavioral fraud analytics brief back to the DB, and loops back to the `orchestration` node.
 
 ---
 

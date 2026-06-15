@@ -16,17 +16,19 @@ graph TD
     B --> C[intake & validation Nodes]
     C --> D[document_check Gate]
     
-    D -- Sufficient --> E["Agent 3: Fraud Reasoning Agent (FRIA)"]
+    D -- Sufficient --> F["Agent 1: Dispute Understanding (ARIA)"]
     D -- Insufficient --> H[Halt: Pending Documents]
     
-    E --> F["Agent 1: Dispute Understanding (ARIA)"]
     F --> G[reasoning Node: Tag Enrichment]
     G --> I["Agent 2: Investigation Agent (IIA)"]
     I --> J["Agent 5: Workflow Orchestration Agent (WOA)"]
     
+    J -- Next step = FRA --> E["Agent 3: Fraud Reasoning Agent (FRIA)"]
     J -- Next step = EIA --> K["Agent 4: Evidence Agent (EIA)"]
-    J -- Else --> L[structured_output Node]
-    K --> L
+    J -- Else / Completed --> L[structured_output Node]
+    
+    E --> J
+    K --> J
     L --> M[(PostgreSQL Database)]
     M --> N[Ops Portal / Human Review Queue]
 ```

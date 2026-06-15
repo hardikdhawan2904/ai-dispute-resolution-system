@@ -41,7 +41,7 @@ WOA is the brain of the multi-agent system. It runs late in the intake workflow 
      └───────────────┴───────────────┘
 ```
 
-WOA executes at the `orchestration` node of the main workflow (`dispute_workflow.py`). It reads persisted DB fields and outputs a structured workflow plan. Downstream routing checks this plan: if `next_agent=EVIDENCE_AGENT`, the workflow branches to the `evidence` node (Agent 4); otherwise, it bypasses evidence verification and completes execution.
+WOA executes at the `orchestration` node of the main workflow (`dispute_workflow.py`). It reads persisted DB fields and outputs a structured workflow plan. Downstream routing checks this plan: if `next_agent=FRAUD_AGENT`, the workflow routes to the `fraud_reasoning` node; if `next_agent=EVIDENCE_AGENT`, it routes to the `evidence` node. Both nodes loop back to the `orchestration` node after execution to dynamically determine and run the next scheduled step until all steps have completed and execution finalized.
 
 ---
 

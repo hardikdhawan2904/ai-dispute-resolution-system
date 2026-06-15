@@ -32,27 +32,32 @@ CUSTOMER DISPUTE SUBMISSION
     │  (Intake & Fraud Scoring)  │ + Risk Baseline
     └────────────┬───────────────┘
                  │
-         ┌───────┴──────────┐
-         ▼                  ▼
-    ┌──────────┐      ┌──────────────────┐
-    │ Agent 2  │      │ Agent 3: FRA     │
-    │ IIA      │      │ (Fraud Patterns) │
-    │(History) │      └──────────────────┘
-    └──────────┘               │
-         │                     │
-         └──────────┬──────────┘
-                    ▼
-            ┌───────────────────┐
-            │ Agent 4: EIA      │
-            │ (Evidence Check)  │
-            └────────┬──────────┘
-                     │
-                     ▼
-            ┌───────────────────┐
-            │ Agent 5: WOA      │
-            │ (Orchestration)   │
-            │ Route to Analysts │
-            └───────────────────┘
+                 ▼
+    ┌────────────────────────────┐
+    │  Agent 2: IIA              │ Historical Analysis
+    │  (History & Plan)          │ + Profile
+    └────────────┬───────────────┘
+                 │
+                 ▼
+    ┌────────────────────────────┐
+    │  Agent 5: WOA              │ Orchestration
+    │  (Workflow Coordinator)    │ Case Routing
+    └────────────┬───────────────┘
+                 │
+        ┌────────┴────────┐
+        ▼                 ▼
+   ┌──────────┐     ┌──────────┐
+   │ Agent 4  │     │ Agent 3  │
+   │ EIA      │     │ FRA      │
+   │(Evidence)│     │(Fraud)   │
+   └────┬─────┘     └────┬─────┘
+        │                │
+        └────────┬───────┘
+                 ▼
+          structured_output
+                 │
+                 ▼
+                END
 ```
 
 ---
@@ -629,48 +634,39 @@ CUSTOMER
 │ • Score fraud indicators     │
 │ • Assign priority            │
 └──────────┬───────────────────┘
-           │ fraud_suspicion
-           │ priority
-           │ confidence_score
+           │
            ▼
-        DATABASE
-     dispute_cases
-     ├─ case_id
-     ├─ fraud_suspicion
-     ├─ priority
-     ├─ confidence_score
-     └─ ...
-
-   ┌───────────┬────────────┐
-   ▼           ▼            ▼
-┌─────────┐ ┌──────────┐ ┌──────────┐
-│ Agent 2 │ │ Agent 3  │ │ Agent 4  │
-│ IIA     │ │ FRA      │ │ EIA      │
-│(History)│ │(Patterns)│ │(Evidence)│
-└────┬────┘ └────┬─────┘ └────┬─────┘
-     │           │            │
-     └─────┬─────┴─────┬──────┘
-           ▼           ▼
-        DATABASE
-     dispute_cases
-     ├─ investigation_plan
-     ├─ fraud_probability
-     ├─ fraud_risk_level
-     ├─ evidence_assessment
-     └─ ...
-
+┌──────────────────────────────┐
+│ Agent 2: IIA (INVESTIGATION) │
+│ • Customer risk profile      │
+│ • Merchant risk profile      │
+│ • Investigation plan         │
+└──────────┬───────────────────┘
            │
            ▼
 ┌──────────────────────────────┐
 │ Agent 5: WOA (ORCHESTRATION) │
-│ • Route to specialists       │
-│ • Set SLA                    │
-│ • Assign analyst             │
+│ • Evaluate case complexity   │
+│ • Dynamically route case     │
+│ • Schedule specialist agents │
 └──────────┬───────────────────┘
            │
-           ▼
-     INVESTIGATION QUEUE
-     (Fraud/Merchant/Compliance Teams)
+           ├────────────────────────────┐
+           ▼                            ▼
+┌──────────────────────────────┐  ┌──────────────────────────────┐
+│ Agent 3: FRA (FRAUD AGENT)   │  │ Agent 4: EIA (EVIDENCE AGENT)│
+│ • Spend & geovelocity risk   │  │ • Document completeness check│
+│ • Anomaly indicators check   │  │ • Evidence strength checklist│
+└──────────┬───────────────────┘  └─────────────┬────────────────┘
+           │                                    │
+           └──────────────────┬─────────────────┘
+                              ▼
+                        dispute_cases
+                    (Final structured case)
+                              │
+                              ▼
+                     INVESTIGATION QUEUE
+              (Fraud/Merchant/Compliance Teams)
 ```
 
 ---
