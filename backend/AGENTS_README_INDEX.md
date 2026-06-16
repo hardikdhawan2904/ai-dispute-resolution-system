@@ -217,7 +217,7 @@ agent:
   name: Agent Full Name
   version: "X.0"
   llm:
-    model: claude-3-5-sonnet-20241022
+    model: llama-3.1-8b-instant
     temperature: 0.3
     max_tokens: 2048
   langgraph:

@@ -66,7 +66,7 @@ CUSTOMER DISPUTE SUBMISSION
 ## Dispute Understanding Agent (ARIA)
 
 **Role**: First intake point — dispute classification & fraud risk scoring  
-**Model**: Claude 3.5 Sonnet  
+**Model**: Groq (llama-3.1-8b-instant)  
 **Execution**: ReAct loop (max 3 iterations)
 
 ### Input
@@ -212,7 +212,7 @@ FINAL THRESHOLDS:
 ## Investigation Intelligence Agent (IIA)
 
 **Role**: Historical analysis & risk profiling  
-**Model**: Claude 3.5 Sonnet  
+**Model**: Groq (llama-3.1-8b-instant)  
 **Data Sources**: 526+ historical disputes + 11,000+ transactions  
 **Execution**: ReAct loop (5 tools available)
 
@@ -311,7 +311,7 @@ RECEIVES Agent 1 OUTPUT
 ## Fraud Reasoning Agent (FRA)
 
 **Role**: Fraud pattern analysis & anomaly detection  
-**Model**: Claude 3.5 Sonnet  
+**Model**: Groq (llama-3.1-8b-instant)  
 **Flow Type**: Linear (3 tools pre-executed in build_context node)
 
 ### Workflow
@@ -421,7 +421,7 @@ FINAL = MIN(SUM(all factors), 0.95)  # Never 100% certain
 ## Evidence Intelligence Agent (EIA)
 
 **Role**: Evidence verification & document requirement tracking  
-**Model**: Claude 3.5 Sonnet  
+**Model**: Groq (llama-3.1-8b-instant)  
 **Execution**: ReAct loop (5 tools available)
 
 ### Workflow
@@ -513,7 +513,7 @@ RECEIVES Agent 1, 2, 3 OUTPUT
 ## Orchestration Workflow Agent (WOA)
 
 **Role**: Coordinator — routes cases to specialist agents & final disposition  
-**Model**: Claude 3.5 Sonnet  
+**Model**: Groq (llama-3.1-8b-instant)  
 **Execution**: 6 deterministic tools (pre-computed before LLM)
 
 ### Workflow
