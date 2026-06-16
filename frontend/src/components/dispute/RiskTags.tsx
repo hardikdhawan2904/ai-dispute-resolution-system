@@ -31,7 +31,7 @@ interface RiskTagsProps {
 
 export default function RiskTags({ tags, compact = false }: RiskTagsProps) {
   if (!tags || tags.length === 0) {
-    return <span style={{ fontSize: "0.75rem", color: "#64748B" }}>No risk indicators identified</span>;
+    return <span className="text-xs text-slate-500">No risk indicators identified</span>;
   }
 
   const grouped: Record<"critical" | "warning" | "info", string[]> = { critical: [], warning: [], info: [] };
@@ -39,12 +39,16 @@ export default function RiskTags({ tags, compact = false }: RiskTagsProps) {
 
   if (compact) {
     return (
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
+      <div className="flex flex-wrap gap-1.5">
         {tags.map((tag) => {
           const sev = getRiskTagSeverity(tag);
           const cfg = SEVERITY_CONFIG[sev];
           return (
-            <span key={tag} style={{ background: cfg.bg, color: cfg.text, border: `1px solid ${cfg.border}`, borderRadius: 3, padding: "0.15rem 0.5rem", fontSize: "0.65rem", fontWeight: 600 }}>
+            <span
+              key={tag}
+              style={{ background: cfg.bg, color: cfg.text, borderColor: cfg.border }}
+              className="border rounded-[3px] px-2 py-0.5 text-[10.5px] font-semibold"
+            >
               {TAG_LABELS[tag] ?? tag.replace(/_/g, " ")}
             </span>
           );
@@ -54,21 +58,31 @@ export default function RiskTags({ tags, compact = false }: RiskTagsProps) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+    <div className="flex flex-col gap-3.5">
       {(["critical", "warning", "info"] as const).map((sev) => {
         const items = grouped[sev];
         if (items.length === 0) return null;
         const cfg = SEVERITY_CONFIG[sev];
         return (
           <div key={sev}>
-            <div style={{ fontSize: "0.6rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", color: "#64748B", marginBottom: "0.375rem" }}>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
               {cfg.label}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            <div className="flex flex-col gap-1">
               {items.map((tag) => (
-                <div key={tag} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0.625rem", background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 3 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: cfg.dot, flexShrink: 0 }} />
-                  <span style={{ fontSize: "0.72rem", fontWeight: 500, color: cfg.text }}>
+                <div
+                  key={tag}
+                  style={{ background: cfg.bg, borderColor: cfg.border }}
+                  className="flex items-center gap-2 px-2.5 py-1.5 border rounded-[3px]"
+                >
+                  <div
+                    style={{ backgroundColor: cfg.dot }}
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                  />
+                  <span
+                    style={{ color: cfg.text }}
+                    className="text-[11.5px] font-medium"
+                  >
                     {TAG_LABELS[tag] ?? tag.replace(/_/g, " ")}
                   </span>
                 </div>

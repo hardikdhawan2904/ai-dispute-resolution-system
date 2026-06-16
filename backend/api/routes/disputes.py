@@ -45,7 +45,20 @@ async def submit_dispute_public(
     from utils.extractor import extract_text
     from database.models import BankCustomer, Transaction
 
-    data = DisputeSubmissionRequest.model_validate_json(payload).model_dump()
+    from pydantic import ValidationError
+    try:
+        data = DisputeSubmissionRequest.model_validate_json(payload).model_dump()
+    except ValidationError as err:
+        safe_errors = []
+        for e in err.errors(include_url=False):
+            safe_e = {k: v for k, v in e.items() if k != "ctx"}
+            if "ctx" in e:
+                safe_e["ctx"] = {ck: str(cv) for ck, cv in e["ctx"].items()}
+            safe_errors.append(safe_e)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=safe_errors,
+        )
 
     # Always resolve customer details from the DB — never trust form-submitted values.
     customer = db.query(BankCustomer).filter(
@@ -329,8 +342,20 @@ def _reanalyse_after_upload(case_id: str) -> None:
                     document_texts.append(f"[{f.name}]\n{text}")
 
     # ── Phase 3: run agents (slow LLM calls, no DB held) ─────────────────────
-    from workflows.dispute_workflow import _save_agent1_to_db, _save_agent2_to_db, _save_agent3_to_db
+    from workflows.dispute_workflow import (
+        _save_agent1_to_db, _save_agent2_to_db, _save_agent3_to_db,
+        _save_fraud_reasoning_to_db,
+    )
+    from agents.fraud_reasoning_agent import run_fraud_reasoning_agent
     from agents.orchestration_agent import run_orchestration_agent
+
+    try:
+        fraud_result = run_fraud_reasoning_agent({}, case_id=case_id)
+        if fraud_result:
+            _save_fraud_reasoning_to_db(case_id, fraud_result)
+    except Exception as exc:
+        api_logger.error(f"_reanalyse_after_upload fraud_reasoning failed {case_id}: {exc}", exc_info=True)
+
     try:
         result = run_dispute_agent({}, case_id=case_id, document_texts=document_texts)
     except Exception as exc:
@@ -474,6 +499,17 @@ def _list_case_dict(case: dict) -> dict:
         "evidence_match_note":  None,
         "structured_reasoning": None,
         "customer_intent_summary": None,
+        # Trust Agent
+        "trust_intelligence":   None,
+        "user_trust_score":     case.get("user_trust_score") if case.get("user_trust_score") is not None else 1.0,
+        "behavioral_risk_score": case.get("behavioral_risk_score") if case.get("behavioral_risk_score") is not None else 0.0,
+        "identity_status":      case.get("identity_status") if case.get("identity_status") is not None else "PENDING",
+        # Fraud Agent
+        "fraud_reasoning_brief": None,
+        "fraud_probability":     case.get("fraud_probability") if case.get("fraud_probability") is not None else 0.0,
+        "fraud_risk_level":      case.get("fraud_risk_level") if case.get("fraud_risk_level") is not None else "LOW",
+        # Evidence Agent
+        "evidence_assessment":   None,
     }
 
 
@@ -525,7 +561,14 @@ def _safe_case_dict(case: dict) -> dict:
         "locked_at": case.get("locked_at"),
         "created_at": case.get("created_at") or "",
         "updated_at": case.get("updated_at"),
-        "investigation_plan":  case.get("investigation_plan"),
-        "workflow_plan":       case.get("workflow_plan"),
-        "evidence_assessment": case.get("evidence_assessment"),
+        "investigation_plan":    case.get("investigation_plan"),
+        "workflow_plan":         case.get("workflow_plan"),
+        "trust_intelligence":    case.get("trust_intelligence"),
+        "user_trust_score":      case.get("user_trust_score") if case.get("user_trust_score") is not None else 1.0,
+        "behavioral_risk_score": case.get("behavioral_risk_score") if case.get("behavioral_risk_score") is not None else 0.0,
+        "identity_status":       case.get("identity_status") if case.get("identity_status") is not None else "PENDING",
+        "fraud_reasoning_brief": case.get("fraud_reasoning_brief"),
+        "fraud_probability":     case.get("fraud_probability") if case.get("fraud_probability") is not None else 0.0,
+        "fraud_risk_level":      case.get("fraud_risk_level") if case.get("fraud_risk_level") is not None else "LOW",
+        "evidence_assessment":   case.get("evidence_assessment"),
     }

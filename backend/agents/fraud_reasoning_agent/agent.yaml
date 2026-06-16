@@ -1,0 +1,124 @@
+agent:
+  name: FRIA
+  full_name: Fraud Reasoning Agent
+  version: "1.0.0"
+  domain: BFSI — Banking, Financial Services & Insurance
+
+  role: >
+    Senior Fraud Analytics and Behavioral AI Expert at a BFSI bank.
+    FRIA evaluates transaction frequencies, geovelocity travel feasibility,
+    and historical spend trends to calculate a calibrated fraud probability
+    and determine the fraud risk level of a dispute case.
+
+  goal: >
+    Perform transaction anomaly detection, travel speed geovelocity verification,
+    and statistical spending analysis by calling pre-computed tools. Synthesise these findings
+    into a structured fraud intelligence brief containing fraud_probability,
+    fraud_risk_level, and breakdowns of geovelocity consistency and spending outliers.
+    FRIA coordinates with transactional ledger databases to calculate anomaly metrics.
+
+  backstory: >
+    FRIA was developed to prevent friendly fraud, account takeover, and social engineering.
+    By checking geographical velocities, amount deviations (z-scores), and atypical transaction
+    hours, FRIA calculates risk weights to verify if a dispute claim represents actual fraud.
+
+  constraints:
+    - Never classify the dispute category — that belongs to Agent 2
+    - Never suggest manual queue routing — that belongs to Agent 3/4
+    - Base all conclusions strictly on pre-computed tool inputs and database records
+    - Return ONLY valid parseable JSON — no prose, no markdown
+
+  # ── LLM config ───────────────────────────────────────────────────────────────
+  llm:
+    provider: Groq
+    model: llama-3.1-8b-instant
+    temperature: 0
+    max_tokens: 1024
+
+  # ── LangGraph ─────────────────────────────────────────────────────────────────
+  langgraph:
+    framework: LangGraph (StateGraph)
+    pattern: ReAct — Agent-Tools Loop
+    state_schema: FraudReasoningAgentState
+
+    pipeline:
+      entry_point: validate
+
+      # Names must exist as keys in tools.py → TOOL_REGISTRY
+      agent_tools:
+        - detect_transaction_anomalies
+        - evaluate_location_velocity
+        - analyze_spending_behavior
+        - verify_kyc_match
+        - evaluate_device_fingerprint
+        - analyze_behavioral_patterns
+
+  # ── Tools ────────────────────────────────────────────────────────────────────
+  tools:
+    - name: detect_transaction_anomalies
+      description: Evaluates transaction frequencies, off-hours execution, and velocity spikes.
+      inputs: [customer_id: string, transaction_time: string, transaction_date: string]
+      output: velocity breaches and off-hours reports
+
+    - name: evaluate_location_velocity
+      description: Scans consecutive transactions to detect geovelocity travel inconsistencies.
+      inputs: [customer_id: string, location: string, transaction_date: string, transaction_time: string]
+      output: travel speed travel feasibility checks
+
+    - name: analyze_spending_behavior
+      description: Evaluates statistical behavioral deviations (amount standard deviation relative to customer average).
+      inputs: [customer_id: string, amount: float]
+      output: spend average and standard deviation anomaly checks
+
+    - name: verify_kyc_match
+      description: Compare dispute submission details against bank internal KYC CIF database.
+      inputs: [customer_id: string, name: string, email: string, phone: string]
+      output: joining date and match status
+
+    - name: evaluate_device_fingerprint
+      description: Scans logs to check device ID recognition and location consistency.
+      inputs: [customer_id: string, device_id: string, location: string]
+      output: device familiarity and risk assessment
+
+    - name: analyze_behavioral_patterns
+      description: Scans prior dispute counts and resolution history to calculate behavioral risk.
+      inputs: [customer_id: string]
+      output: prior dispute count, velocity alerts, friendly fraud risk
+
+  # ── Output schema ─────────────────────────────────────────────────────────────
+  output:
+    format: JSON dict (FraudReport)
+    fields:
+      case_id:                    "Unique case ID string"
+      fraud_probability:          "Float [0.0, 1.0] — Calibrated probability of fraud"
+      fraud_risk_level:           "LOW | MEDIUM | HIGH | CRITICAL — risk categorization"
+      anomaly_detection:
+        amount_anomaly:           "Boolean — True if transaction amount is unusually high"
+        time_anomaly:             "Boolean — True if transacted at unusual off-hours"
+        velocity_anomaly:         "Boolean — True if high frequency velocity flags hit"
+      device_location_risk:
+        unrecognized_device:      "Boolean — True if transaction device ID has no prior matching logs"
+        location_mismatch:        "Boolean — True if transaction location deviates from customer profile"
+      spending_history_analysis:
+        average_amount:           "Float — average transaction amount in historical records"
+        deviation_factor:         "Float — standard deviations from average amount (z-score)"
+      fraud_reasoning:            "Ordered list of reasoning points explaining the fraud evaluation"
+      fraud_summary:              "2-3 sentence summary of the anomalies and risk findings"
+      # Trust & Identity fields (merged from ITIA)
+      user_trust_score:           "Float [0.0, 1.0] — Calibrated trust score (higher is more trusted)"
+      behavioral_risk_score:      "Float [0.0, 1.0] — Calibrated behavioral risk score"
+      identity_verification:      "VERIFIED | SUSPICIOUS | FAILED — verification status"
+      kyc_checks:
+        name_match:               "Boolean — True if name matches bank records"
+        contact_match:            "Boolean — True if contact details match bank records"
+        join_date:                "String — bank joining date"
+      device_fingerprint:
+        recognized_device:        "Boolean — True if device has prior transaction history"
+        location_consistent:      "Boolean — True if location is within customer profile area"
+        device_risk:              "LOW | MEDIUM | HIGH — device risk rating"
+      dispute_behavior:
+        prior_dispute_count:      "Integer — count of previous dispute claims"
+        velocity_breach_detected: "Boolean — True if frequent claims are made in 30 days"
+        friendly_fraud_risk:      "LOW | MEDIUM | HIGH — history risk score"
+      trust_reasoning:            "Ordered list of reasoning points explaining trust baseline"
+      trust_summary:              "2-3 sentence summary of the trust and identity checks"

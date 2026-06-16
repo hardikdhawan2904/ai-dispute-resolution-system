@@ -85,6 +85,7 @@ export function FSelect({
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           className={`${baseClass} ${stateClass}`}
+          aria-label={label}
         >
           {placeholder && (
             <option value="" disabled>

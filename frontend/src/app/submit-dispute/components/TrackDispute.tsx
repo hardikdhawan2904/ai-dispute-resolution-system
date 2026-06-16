@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { Search, RefreshCw, AlertCircle, CheckCircle2, FileText, Upload, X, CheckCircle } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";

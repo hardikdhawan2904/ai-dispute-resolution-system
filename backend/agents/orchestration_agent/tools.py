@@ -87,6 +87,7 @@ def _read_case(case_id: str):
             "investigation_plan":       case.investigation_plan or {},
             "workflow_plan":            case.workflow_plan if hasattr(case, "workflow_plan") else None,
             "requires_manual_review":   case.requires_manual_review or False,
+            "fraud_reasoning_brief":    case.fraud_reasoning_brief if hasattr(case, "fraud_reasoning_brief") else None,
         }
     finally:
         db.close()
@@ -468,7 +469,10 @@ def determine_next_execution_step(case_id: str) -> str:
 
         # Read completed agents from existing workflow_plan (if WOA ran before)
         existing_plan = c.get("workflow_plan") or {}
-        completed = existing_plan.get("completed_agents", []) if isinstance(existing_plan, dict) else []
+        completed_raw = existing_plan.get("completed_agents", []) if isinstance(existing_plan, dict) else []
+        completed = list(completed_raw) if isinstance(completed_raw, (list, tuple)) else []
+        if c.get("fraud_reasoning_brief") and "FRAUD_AGENT" not in completed:
+            completed.append("FRAUD_AGENT")
 
         # Dependency map
         deps = {

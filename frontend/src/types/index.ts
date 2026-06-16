@@ -269,6 +269,15 @@ export interface DisputeCase {
   investigation_plan?: InvestigationPlan | null;
   // Agent 3 — WOA workflow plan
   workflow_plan?: WorkflowPlan | null;
+  // Agent 4 — Trust Agent outputs
+  trust_intelligence?: TrustIntelligence | null;
+  user_trust_score?: number;
+  behavioral_risk_score?: number;
+  identity_status?: string;
+  // Agent 5 — Fraud Reasoning Agent outputs
+  fraud_reasoning_brief?: FraudReasoningBrief | null;
+  fraud_probability?: number;
+  fraud_risk_level?: string;
   // Agent 4 — EIA evidence assessment
   evidence_assessment?: EvidenceAssessment | null;
   // Agent 1 fallback resilience
@@ -276,6 +285,44 @@ export interface DisputeCase {
   failure_reason?: string | null;
   created_at: string;
   updated_at?: string;
+}
+
+export interface TrustIntelligence {
+  case_id: string;
+  user_trust_score: number;
+  behavioral_risk_score: number;
+  identity_verification: "VERIFIED" | "SUSPICIOUS" | "FAILED";
+  kyc_checks: {
+    name_match: boolean;
+    contact_match: boolean;
+    join_date: string;
+  };
+  device_fingerprint: {
+    recognized_device: boolean;
+    location_consistent: boolean;
+    device_risk: "LOW" | "MEDIUM" | "HIGH";
+  };
+  dispute_behavior: {
+    prior_dispute_count: number;
+    velocity_breach_detected: boolean;
+    friendly_fraud_risk: "LOW" | "MEDIUM" | "HIGH";
+  };
+  trust_reasoning: string[];
+  trust_summary: string;
+  tools_used?: string[];
+  agent_metadata?: {
+    name: string;
+    version: string;
+    model: string;
+    timestamp: string;
+    duration_ms: number;
+  };
+  metrics?: {
+    total_duration_ms: number;
+    llm_calls: number;
+    tool_calls: number;
+    retry_count: number;
+  };
 }
 
 export interface CaseNote {
@@ -391,5 +438,40 @@ export interface WorkflowState {
   success: boolean;
   error_message?: string;
   created_at: string;
+}
+
+export interface FraudReasoningBrief {
+  case_id: string;
+  fraud_probability: number;
+  fraud_risk_level: string;
+  anomaly_detection: {
+    amount_anomaly: boolean;
+    time_anomaly: boolean;
+    velocity_anomaly: boolean;
+  };
+  device_location_risk: {
+    unrecognized_device: boolean;
+    location_mismatch: boolean;
+  };
+  spending_history_analysis: {
+    average_amount: number;
+    deviation_factor: number;
+  };
+  fraud_reasoning: string[];
+  fraud_summary: string;
+  tools_used?: string[];
+  agent_metadata?: {
+    name: string;
+    version: string;
+    model: string;
+    timestamp: string;
+    duration_ms: number;
+  };
+  metrics?: {
+    total_duration_ms: number;
+    llm_calls: number;
+    tool_calls: number;
+    retry_count: number;
+  };
 }
 

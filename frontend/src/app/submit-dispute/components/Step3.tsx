@@ -260,7 +260,7 @@ export default function Step3({ form, reasons }: Step3Props) {
                   placeholder="e.g. Delhi, India or London, UK"
                   value={f.value ?? ""}
                   onChange={f.onChange}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
               </div>
             )}

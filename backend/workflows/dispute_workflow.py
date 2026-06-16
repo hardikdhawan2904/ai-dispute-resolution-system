@@ -16,6 +16,7 @@ from langgraph.graph import StateGraph, END
 
 from agents.dispute_agent import run_dispute_agent
 from agents.investigation_agent import run_investigation_agent
+from agents.fraud_reasoning_agent import run_fraud_reasoning_agent
 from utils.logger import workflow_logger, log_workflow_event
 from utils.helpers import generate_case_id, utc_now_iso, sanitize_amount
 from services.dispute_understanding_fallback_service import classify_failure, generate_agent1_fallback
@@ -47,6 +48,12 @@ class DisputeWorkflowState(TypedDict):
 
     # AI analysis
     ai_analysis: Optional[dict]
+
+    # Trust analysis (Agent 4 output)
+    trust_output: Optional[dict]
+
+    # Fraud analysis (Agent 5 output)
+    fraud_output: Optional[dict]
 
     # Investigation plan (Agent 2 output)
     investigation_output: Optional[dict]
@@ -95,7 +102,7 @@ def intake_node(state: DisputeWorkflowState) -> dict:
     dispute_input["amount"] = sanitize_amount(dispute_input.get("amount", 0))
 
     # Assign case ID — use pre-generated ID from public submit endpoint if provided
-    case_id = dispute_input.pop("_preset_case_id", None) or generate_case_id()
+    case_id = dispute_input.pop("_preset_case_id", None) or dispute_input.get("case_id") or generate_case_id()
     dispute_input["case_id"] = case_id
 
     log_workflow_event(
@@ -360,13 +367,64 @@ def _save_agent3_to_db(case_id: str, workflow_plan: dict) -> None:
         db.close()
 
 
-def _save_evidence_to_db(case_id: str, evidence_assessment: dict, workflow_plan: dict) -> None:
-    """Intermediate DB save after Agent 4 — evidence assessment and updated workflow plan."""
+def _save_fraud_reasoning_to_db(case_id: str, fraud_reasoning_brief: dict, workflow_plan: Optional[dict] = None) -> Optional[dict]:
+    """Intermediate DB save after Fraud Reasoning Agent."""
     if not case_id:
-        return
+        return workflow_plan
     from database.database import SessionLocal
     from database.models import DisputeCase
     db = SessionLocal()
+    updated_plan = None
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
+        if case:
+            case.fraud_reasoning_brief = fraud_reasoning_brief
+            case.fraud_probability     = fraud_reasoning_brief.get("fraud_probability", 0.0)
+            case.fraud_risk_level      = fraud_reasoning_brief.get("fraud_risk_level", "LOW")
+            # Save trust fields calculated inside fraud reasoning agent
+            case.trust_intelligence    = fraud_reasoning_brief
+            case.user_trust_score      = fraud_reasoning_brief.get("user_trust_score", 1.0)
+            case.behavioral_risk_score = fraud_reasoning_brief.get("behavioral_risk_score", 0.0)
+            case.identity_status       = fraud_reasoning_brief.get("identity_verification", "PENDING")
+            case.current_stage         = "fraud_reasoning_complete"
+
+            # Update workflow_plan to mark FRAUD_AGENT as completed
+            plan_source = workflow_plan or case.workflow_plan
+            if plan_source:
+                updated_plan = dict(plan_source)
+                completed = list(updated_plan.get("completed_agents") or [])
+                if "FRAUD_AGENT" not in completed:
+                    completed.append("FRAUD_AGENT")
+                updated_plan["completed_agents"] = completed
+                # Advance next_agent past FRAUD_AGENT
+                remaining = [
+                    a for a in (updated_plan.get("workflow_path") or [])
+                    if a not in completed
+                ]
+                updated_plan["remaining_agents"] = remaining
+                updated_plan["next_agent"] = remaining[0] if remaining else None
+                updated_plan["workflow_status"] = (
+                    "IN_PROGRESS" if remaining else
+                    ("ESCALATED" if updated_plan.get("escalation_required") else "COMPLETED")
+                )
+                case.workflow_plan = updated_plan
+            db.commit()
+    except Exception as exc:
+        workflow_logger.warning(f"Intermediate Fraud Reasoning DB save failed for {case_id}: {exc}")
+        db.rollback()
+    finally:
+        db.close()
+    return updated_plan if updated_plan is not None else workflow_plan
+
+
+def _save_evidence_to_db(case_id: str, evidence_assessment: dict, workflow_plan: dict) -> dict:
+    """Intermediate DB save after Agent 4 — evidence assessment and updated workflow plan."""
+    if not case_id:
+        return workflow_plan
+    from database.database import SessionLocal
+    from database.models import DisputeCase
+    db = SessionLocal()
+    updated_plan = None
     try:
         case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
         if case:
@@ -397,8 +455,57 @@ def _save_evidence_to_db(case_id: str, evidence_assessment: dict, workflow_plan:
         db.rollback()
     finally:
         db.close()
+    return updated_plan if updated_plan is not None else workflow_plan
 
 
+def fraud_reasoning_node(state: DisputeWorkflowState) -> dict:
+    """
+    Invokes the Fraud Reasoning Agent (FRIA, Agent 5).
+    Saves results to DB immediately.
+    """
+    start = time.time()
+    node  = "fraud_reasoning"
+
+    try:
+        fraud_output = run_fraud_reasoning_agent(
+            state["dispute_input"],
+            case_id=state.get("case_id"),
+        )
+        updated_wf_plan = _save_fraud_reasoning_to_db(
+            state.get("case_id", ""),
+            fraud_output,
+            state.get("orchestration_output"),
+        )
+        log_workflow_event(
+            workflow_logger,
+            event="NODE_FRAUD_REASONING_COMPLETE",
+            stage=node,
+            case_id=state.get("case_id"),
+            extra={
+                "fraud_probability": fraud_output.get("fraud_probability"),
+                "fraud_risk_level":  fraud_output.get("fraud_risk_level"),
+                "user_trust_score":  fraud_output.get("user_trust_score"),
+                "identity_verification": fraud_output.get("identity_verification"),
+            },
+        )
+        return {
+            "fraud_output":         fraud_output,
+            "trust_output":         fraud_output,
+            "orchestration_output": updated_wf_plan,
+            "current_stage":        node,
+            "execution_trace": _trace(
+                node, start, True,
+                f"probability={fraud_output.get('fraud_probability')} risk={fraud_output.get('fraud_risk_level')}",
+            ),
+        }
+    except Exception as exc:
+        workflow_logger.warning(f"Fraud Reasoning agent failed: {exc}", exc_info=True)
+        return {
+            "fraud_output":    None,
+            "trust_output":    None,
+            "current_stage":   node,
+            "execution_trace": _trace(node, start, False, f"agent failed: {exc}"),
+        }
 def dispute_understanding_node(state: DisputeWorkflowState) -> dict:
     """
     Invokes the Dispute Understanding Agent (Groq LLM).
@@ -632,7 +739,7 @@ def evidence_node(state: DisputeWorkflowState) -> dict:
         evidence_assessment = run_evidence_agent(state.get("case_id", ""))
         # Intermediate save — evidence assessment and updated workflow plan
         orchestration_output = state.get("orchestration_output") or {}
-        _save_evidence_to_db(state.get("case_id", ""), evidence_assessment, orchestration_output)
+        updated_wf_plan = _save_evidence_to_db(state.get("case_id", ""), evidence_assessment, orchestration_output)
         log_workflow_event(
             workflow_logger,
             event="NODE_EVIDENCE_COMPLETE",
@@ -646,8 +753,9 @@ def evidence_node(state: DisputeWorkflowState) -> dict:
             },
         )
         return {
-            "evidence_output": evidence_assessment,
-            "current_stage":   node,
+            "evidence_output":      evidence_assessment,
+            "orchestration_output": updated_wf_plan,
+            "current_stage":        node,
             "execution_trace": _trace(
                 node, start, True,
                 f"strength={evidence_assessment.get('evidence_strength')} "
@@ -665,12 +773,14 @@ def evidence_node(state: DisputeWorkflowState) -> dict:
 
 
 def route_after_orchestration(state: DisputeWorkflowState) -> str:
-    """Route to evidence_node only when WOA designates EVIDENCE_AGENT as the immediate
-    next step. Respects dependency ordering — if FRAUD_AGENT must run first, WOA sets
-    next_agent=FRAUD_AGENT and EIA is skipped for this run (analyst triggers it later)."""
+    """Route to specialist agents dynamically based on the WOA orchestration plan."""
     wf_plan    = state.get("orchestration_output") or {}
     next_agent = wf_plan.get("next_agent") if isinstance(wf_plan, dict) else None
-    return "run_evidence" if next_agent == "EVIDENCE_AGENT" else "skip_evidence"
+    if next_agent == "FRAUD_AGENT":
+        return "run_fraud"
+    elif next_agent == "EVIDENCE_AGENT":
+        return "run_evidence"
+    return "skip_all"
 
 
 def structured_output_node(state: DisputeWorkflowState) -> dict:
@@ -720,6 +830,15 @@ def structured_output_node(state: DisputeWorkflowState) -> dict:
         # Agent 1 fallback resilience flags (Changes 3 & 4)
         "fallback_mode":  a.get("fallback_mode", False),
         "failure_reason": a.get("failure_reason"),
+        # Identity & Trust Agent (Agent 4) outputs
+        "trust_intelligence":    state.get("trust_output"),
+        "user_trust_score":      (state.get("trust_output") or {}).get("user_trust_score", 1.0) if state.get("trust_output") else 1.0,
+        "behavioral_risk_score": (state.get("trust_output") or {}).get("behavioral_risk_score", 0.0) if state.get("trust_output") else 0.0,
+        "identity_status":       (state.get("trust_output") or {}).get("identity_verification", "PENDING") if state.get("trust_output") else "PENDING",
+        # Fraud Reasoning Agent (Agent 5) outputs
+        "fraud_reasoning_brief": state.get("fraud_output"),
+        "fraud_probability":     (state.get("fraud_output") or {}).get("fraud_probability", 0.0) if state.get("fraud_output") else 0.0,
+        "fraud_risk_level":      (state.get("fraud_output") or {}).get("fraud_risk_level", "LOW") if state.get("fraud_output") else "LOW",
         # Supporting evidence (preserved for re-analysis)
         "transaction_metadata": d.get("transaction_metadata") or {},
         # Investigation plan (Agent 2)
@@ -794,6 +913,7 @@ def build_dispute_workflow() -> Any:
     graph.add_node("validation",           validation_node)
     graph.add_node("document_check",       document_check_node)
     graph.add_node("pending_documents",    pending_documents_node)
+    graph.add_node("fraud_reasoning",      fraud_reasoning_node)
     graph.add_node("dispute_understanding", dispute_understanding_node)
     graph.add_node("reasoning",            reasoning_node)
     graph.add_node("investigation",        investigation_node)
@@ -829,16 +949,18 @@ def build_dispute_workflow() -> Any:
     graph.add_edge("dispute_understanding", "reasoning")
     graph.add_edge("reasoning",             "investigation")
     graph.add_edge("investigation",         "orchestration")
-    # After orchestration: route to evidence agent if WOA requires it
+    # After orchestration: route to specialist agents dynamically
     graph.add_conditional_edges(
         "orchestration",
         route_after_orchestration,
         {
+            "run_fraud":     "fraud_reasoning",
             "run_evidence":  "evidence",
-            "skip_evidence": "structured_output",
+            "skip_all":      "structured_output",
         },
     )
-    graph.add_edge("evidence",          "structured_output")
+    graph.add_edge("fraud_reasoning",   "orchestration")
+    graph.add_edge("evidence",          "orchestration")
     graph.add_edge("structured_output", END)
     graph.add_edge("pending_documents", END)
     graph.add_edge("invalid_submission", END)
@@ -871,6 +993,8 @@ def run_dispute_workflow(dispute_input: dict, document_texts: Optional[List[str]
         "ai_analysis":          None,
         "investigation_output": None,
         "orchestration_output": None,
+        "trust_output":        None,
+        "fraud_output":        None,
         "evidence_output":      None,
         "final_case":           None,
         "execution_trace":      [],
@@ -926,6 +1050,8 @@ def run_dispute_workflow(dispute_input: dict, document_texts: Optional[List[str]
             "validation_warnings": [],
             "ai_analysis":         fallback_analysis,
             "investigation_output": None,
+            "trust_output":        None,
+            "fraud_output":        None,
             "final_case":          final_case,
             "execution_trace":     [],
             "current_stage":       "fallback",

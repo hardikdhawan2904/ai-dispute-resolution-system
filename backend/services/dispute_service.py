@@ -20,7 +20,7 @@ from sqlalchemy import func, desc
 from workflows.dispute_workflow import run_dispute_workflow
 from database.models import DisputeCase, AuditLog, WorkflowState
 from utils.logger import api_logger, audit_logger, log_workflow_event
-from utils.helpers import utc_now_iso
+from utils.helpers import utc_now_iso, generate_case_id
 from services.priority_engine import compute_priority
 from services.sla_service import compute_sla_deadline
 from services.queue_assignment_service import assign_queue
@@ -49,6 +49,10 @@ class DisputeService:
                 "transaction_id": dispute_input.get("transaction_id"),
             },
         )
+
+        # Ensure case_id is populated in dispute_input before preliminary save
+        if "case_id" not in dispute_input:
+            dispute_input["case_id"] = dispute_input.get("_preset_case_id") or generate_case_id(db)
 
         # ── Step 1: Save to DB immediately ────────────────────────────────────
         db_case = DisputeService._save_preliminary_case(dispute_input, db)
@@ -322,6 +326,13 @@ class DisputeService:
             fraud_selected   = dispute_input.get("fraud_selected", False),
             transaction_metadata = dispute_input.get("transaction_metadata") or {},
             # Defaults until agents fill them in
+            trust_intelligence    = None,
+            user_trust_score      = 1.0,
+            behavioral_risk_score = 0.0,
+            identity_status       = "PENDING",
+            fraud_reasoning_brief = None,
+            fraud_probability     = 0.0,
+            fraud_risk_level      = "LOW",
             status           = "Dispute Raised",
             workflow_ready   = False,   # ← not complete yet
             current_stage    = "intake",
@@ -368,6 +379,13 @@ class DisputeService:
         db_case.fallback_mode           = final_case.get("fallback_mode", False)
         db_case.failure_reason          = final_case.get("failure_reason")
         db_case.workflow_plan           = final_case.get("workflow_plan")
+        db_case.trust_intelligence      = final_case.get("trust_intelligence")
+        db_case.user_trust_score        = final_case.get("user_trust_score", 1.0)
+        db_case.behavioral_risk_score   = final_case.get("behavioral_risk_score", 0.0)
+        db_case.identity_status         = final_case.get("identity_status", "PENDING")
+        db_case.fraud_reasoning_brief   = final_case.get("fraud_reasoning_brief")
+        db_case.fraud_probability       = final_case.get("fraud_probability", 0.0)
+        db_case.fraud_risk_level        = final_case.get("fraud_risk_level", "LOW")
         db_case.status                  = final_case.get("status", "Dispute Raised")
         db_case.workflow_ready          = True
         db_case.current_stage           = "completed"

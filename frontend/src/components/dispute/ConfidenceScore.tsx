@@ -1,5 +1,4 @@
-"use client";
-import { getConfidenceLabel } from "@/lib/utils";
+import { cn, getConfidenceLabel } from "@/lib/utils";
 
 interface ConfidenceScoreProps {
   score: number;
@@ -22,24 +21,24 @@ export default function ConfidenceScore({ score, showLabel = true, size = "md" }
 
   if (size === "lg") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between">
           <div>
-            <div style={{ fontSize: "0.65rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748B", marginBottom: "0.25rem" }}>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
               Investigation Confidence
             </div>
             {showLabel && (
-              <div style={{ fontSize: "0.8rem", fontWeight: 600, color: textColor }}>{label}</div>
+              <div style={{ color: textColor }} className="text-xs font-semibold">{label}</div>
             )}
           </div>
-          <div style={{ fontSize: "1.25rem", fontWeight: 700, fontFamily: "Inter", color: textColor }}>{pct}%</div>
+          <div style={{ color: textColor }} className="text-xl font-bold font-sans">{pct}%</div>
         </div>
         {/* Bar */}
-        <div style={{ height: 6, backgroundColor: "#334155", borderRadius: 2, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${pct}%`, backgroundColor: barColor, borderRadius: 2, transition: "width 0.5s ease" }} />
+        <div className="h-1.5 bg-slate-700 rounded-sm overflow-hidden">
+          <div style={{ width: `${pct}%`, backgroundColor: barColor }} className="h-full rounded-sm transition-[width] duration-500 ease" />
         </div>
         {/* Scale */}
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.6rem", color: "#64748B", fontFamily: "ui-monospace, monospace" }}>
+        <div className="flex justify-between text-[10px] text-slate-500 font-mono">
           <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
         </div>
       </div>
@@ -47,15 +46,18 @@ export default function ConfidenceScore({ score, showLabel = true, size = "md" }
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-      <div style={{ flex: 1, height: 4, backgroundColor: "#334155", borderRadius: 2, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, backgroundColor: barColor, borderRadius: 2, transition: "width 0.4s ease" }} />
+    <div className="flex items-center gap-2.5">
+      <div className="flex-1 h-1 bg-slate-700 rounded-sm overflow-hidden">
+        <div style={{ width: `${pct}%`, backgroundColor: barColor }} className="h-full rounded-sm transition-[width] duration-400 ease" />
       </div>
-      <div style={{ fontFamily: "ui-monospace, monospace", fontWeight: 600, whiteSpace: "nowrap", fontSize: size === "sm" ? "0.7rem" : "0.75rem", color: textColor }}>
+      <div
+        style={{ color: textColor }}
+        className={cn("font-mono font-semibold whitespace-nowrap", size === "sm" ? "text-[11.2px]" : "text-xs")}
+      >
         {pct}%
       </div>
       {showLabel && (
-        <div style={{ fontSize: "0.65rem", color: "#64748B" }} className="hidden sm:block">{label}</div>
+        <div className="text-[10px] text-slate-500 hidden sm:block">{label}</div>
       )}
     </div>
   );

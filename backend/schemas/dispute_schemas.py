@@ -75,6 +75,14 @@ class DisputeSubmissionRequest(BaseModel):
     def validate_currency(cls, v: str) -> str:
         return v.upper().strip()
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and "@" not in v:
+            raise ValueError("Invalid email format")
+        return v
+
+
 
 # ── Response Schemas ──────────────────────────────────────────────────────────
 
@@ -126,9 +134,19 @@ class DisputeCaseResponse(BaseModel):
     locked_at: Optional[str] = None
     created_at: str
     updated_at: Optional[str]
-    investigation_plan:  Optional[dict] = None
-    workflow_plan:       Optional[dict] = None
-    evidence_assessment: Optional[dict] = None
+    investigation_plan:    Optional[dict] = None
+    workflow_plan:         Optional[dict] = None
+    # Trust & Identity Agent
+    trust_intelligence:    Optional[dict] = None
+    user_trust_score:      float = 1.0
+    behavioral_risk_score: float = 0.0
+    identity_status:       str = "PENDING"
+    # Fraud Reasoning Agent
+    fraud_reasoning_brief: Optional[dict] = None
+    fraud_probability:     float = 0.0
+    fraud_risk_level:      str = "LOW"
+    # Evidence Intelligence Agent
+    evidence_assessment:   Optional[dict] = None
 
     model_config = {"from_attributes": True}
 

@@ -1,285 +1,207 @@
 # Intelligent Transaction Dispute Resolution Platform
 
-An AI-assisted BFSI dispute platform for intake, dispute understanding, investigation planning, operational routing, and customer/internal case tracking.
-
-The long-term product vision is a multi-agent dispute intelligence system spanning intake, verification, merchant intelligence, evidence collection, compliance, synthesis, decisioning, and learning loops. The current implementation focuses on the first working slice of that architecture: a production-shaped 2-agent workflow backed by FastAPI, LangGraph, Groq, SQLAlchemy, and a Next.js frontend.
-
-## Current Scope
-
-Implemented today:
-
-- Public dispute submission with file upload and OCR/text extraction
-- Agent 1: dispute understanding and classification
-- Rule-based post-processing for tags, priority, queue, SLA, and manual-review flags
-- Agent 2: investigation planning using database-backed historical lookups
-- Persistence of case records, audit logs, and workflow snapshots
-- Internal operations dashboards and customer-safe tracking views
-
-Planned / represented in the broader workflow vision, but not yet implemented as dedicated agents:
-
-- Separate user verification / trust analysis agent
-- Merchant intelligence agent as a standalone layer
-- Dedicated evidence intelligence agent
-- Dedicated compliance / policy agent
-- Fusion/orchestrator agent
-- Final chargeback decision agent
-- Learning and adaptation agent
-
-## End-to-End Workflow
-
-The system currently works in this order:
-
-1. A customer or ops user submits a dispute from the frontend.
-2. The backend validates the form, generates a case ID, and extracts text from uploaded documents.
-3. Agent 1 analyzes the submission and classifies the dispute.
-4. The workflow applies deterministic enrichment rules on top of Agent 1 output.
-5. Agent 2 reads Agent 1 output and gathers historical intelligence from the database.
-6. The backend computes operational fields such as priority, queue, SLA deadline, and manual-review flags.
-7. The final case, investigation plan, workflow trace, and audit logs are saved in the database.
-8. Customer tracking pages and internal dashboards read from the stored case data.
-
-## Current Agent Architecture
-
-### Agent 1: Dispute Understanding Agent
-
-Purpose:
-
-- Understand what the customer is claiming
-- Classify the dispute into a canonical category
-- Detect fraud suspicion
-- Evaluate evidence relevance
-- Produce confidence, risk tags, and structured reasoning
-
-Inputs:
-
-- Customer details
-- Transaction details
-- Dispute reason
-- Customer free-text complaint
-- Fraud/supporting metadata
-- OCR or extracted text from uploaded documents
-
-Outputs:
-
-- `dispute_category`
-- `fraud_suspicion`
-- `customer_intent_summary`
-- `confidence_score`
-- `confidence_factors`
-- `risk_tags`
-- `structured_reasoning`
-- `evidence_match`
-- `evidence_match_note`
-
-Important implementation note:
-
-- The graph still has LangGraph agent/tool-loop structure, but the current runtime pre-computes tool outputs server-side and uses the LLM mainly for synthesis into final JSON.
-
-### Agent 2: Investigation Intelligence Agent
-
-Purpose:
-
-- Build the investigation plan after classification is complete
-- Gather historical customer, merchant, and dispute intelligence
-- Recommend the right queue, next steps, and required documents
-
-Inputs:
-
-- Structured output from Agent 1
-
-Database-backed lookups:
-
-- Customer dispute history
-- Merchant complaint history
-- Duplicate dispute checks
-- Related case resolution trends
-- Required documents by dispute type
-
-Outputs:
-
-- `recommended_queue`
-- `queue_confidence`
-- `investigation_complexity`
-- `manual_review_required`
-- `customer_risk_profile`
-- `merchant_risk_profile`
-- `duplicate_found`
-- `related_cases`
-- `required_documents`
-- `recommended_steps`
-- `investigation_summary`
-
-Important implementation note:
-
-- Agent 2 currently pre-runs its investigation tools in parallel before the final LLM synthesis step.
-
-## Data Flow
-
-At a high level, data moves like this:
-
-`Frontend form -> FastAPI route -> DisputeService -> LangGraph workflow -> Agent 1 -> workflow enrichment -> Agent 2 -> service-level operational rules -> database -> internal/customer views`
-
-### Frontend to Backend
-
-The public dispute submission flow sends:
-
-- Customer information
-- Transaction information
-- Dispute reason and complaint text
-- Fraud-supporting metadata
-- Uploaded evidence files
-
-Evidence files are saved and processed before the AI analysis step so the extracted text can be included in the same workflow run.
-
-### Backend to Agent 1
-
-Agent 1 receives:
-
-- `dispute_input`
-- `document_texts`
-
-It returns the first structured AI analysis of the case.
-
-### Agent 1 to Agent 2
-
-Agent 2 does not start from raw frontend data. It starts from the structured output of Agent 1 and treats that as the authoritative understanding of the case.
-
-### Database Interaction
-
-The database plays two roles:
-
-- Historical memory for Agent 2 investigation lookups
-- Final storage for processed dispute cases
-
-The system persists:
-
-- The final dispute case record
-- Agent outputs and metadata
-- Investigation plan
-- Audit logs
-- Workflow state snapshots
-
-## Main Platform Layers
-
-### Frontend
-
-- Next.js 14 application
-- Public dispute submission flow
-- Customer dashboard and dispute tracking
-- Internal operations dashboards
-
-### Backend API
-
-- FastAPI service
-- Public and authenticated routes
-- WebSocket updates for internal review dashboards
-- Customer-safe tracking endpoints
-
-### Workflow Layer
-
-- LangGraph workflow for intake, validation, dispute understanding, reasoning, investigation, and structured output
-
-### Persistence Layer
-
-- SQLAlchemy ORM
-- SQLite by default for local development
-- PostgreSQL-compatible configuration for production migration
-
-## Tech Stack
-
-### Backend
-
-- FastAPI
-- LangGraph
-- LangChain
-- Groq
-- SQLAlchemy
-- Pydantic
-- Tenacity
-- pdfplumber / PyMuPDF / pytesseract / Pillow / openpyxl
-
-### Frontend
-
-- Next.js 14
-- React 18
-- TypeScript
-- Tailwind CSS
-- React Hook Form
-- Zod
-
-## Project Structure
-
-Top-level modules:
-
-- `backend/` - API, agents, workflow, services, database, prompts, utils
-- `frontend/` - Next.js app for customer and ops interfaces
-- `samples/` - sample assets and data used during development
-
-Within the backend:
-
-- `agents/` - current AI agents
-- `workflows/` - LangGraph orchestration
-- `services/` - deterministic business logic and persistence orchestration
-- `database/` - engine and ORM models
-- `api/` - route layer
-- `schemas/` - request/response models
-- `utils/` - helpers, logging, extraction
-
-## Local Development
-
-### Backend
-
-From `backend/`:
-
-```bash
-pip install -r requirements.txt
-uvicorn api.main:app --reload
+An enterprise-grade, multi-agent BFSI (Banking, Financial Services, and Insurance) transaction dispute resolution platform. The platform automates transaction intake, user identity and trust profiling, dispute classification, automated evidence validation, structured investigation planning, and workflow orchestration.
+
+Backed by **FastAPI**, **LangGraph**, **Groq (Llama 3.1)**, **PostgreSQL (SQLAlchemy)**, and a **Next.js 14 (App Router)** frontend.
+
+---
+
+## ── Multi-Agent Architecture Overview ──
+
+The system comprises **5 specialized, cooperative agents** that execute in a compiled LangGraph workflow to evaluate, classify, investigate, and route case resolutions. The agents execute in the following sequence:
+
+```mermaid
+graph TD
+    A[Customer Submission] --> B[FastAPI Backend]
+    B --> C[intake & validation Nodes]
+    C --> D[document_check Gate]
+    
+    D -- Sufficient --> F["Agent 1: Dispute Understanding (ARIA)"]
+    D -- Insufficient --> H[Halt: Pending Documents]
+    
+    F --> G[reasoning Node: Tag Enrichment]
+    G --> I["Agent 2: Investigation Agent (IIA)"]
+    I --> J["Agent 5: Workflow Orchestration Agent (WOA)"]
+    
+    J -- Next step = FRA --> E["Agent 3: Fraud Reasoning Agent (FRIA)"]
+    J -- Next step = EIA --> K["Agent 4: Evidence Agent (EIA)"]
+    J -- Else / Completed --> L[structured_output Node]
+    
+    E --> J
+    K --> J
+    L --> M[(PostgreSQL Database)]
+    M --> N[Ops Portal / Human Review Queue]
 ```
 
-Backend default URL:
+### 1. Agent 1: Dispute Understanding Agent (ARIA)
+* **Code Registry**: [dispute_agent](file:///d:/Transaction_dispute_agent/ai-dispute-resolution-system/backend/agents/dispute_agent)
+* **Purpose**: Analyzes the claim details and uploaded documents (extracted via OCR) to categorize the dispute, assess fraud suspicion, extract customer intent, and evaluate initial document corroboration.
+* **Understanding Tools (in-memory computation)**:
+  - `assess_transaction_context`: Evaluates transaction value tiers (RBI circular 2017 thresholds), off-hours risk, card-not-present (CNP) channels, and international patterns.
+  - `score_fraud_indicators`: Tallies active fraud patterns (OTP sharing, remote access, phishing links, card/device loss).
+  - `verify_evidence_match`: Verifies if OCR texts corroborate merchant name and claimed amounts.
+  - `compute_confidence_score`: Calculates final classification certainty score (0.10 to 1.00).
+* **Key Outputs**:
+  - `dispute_category` (One of 9 canonical BFSI categories, e.g., `Unauthorized Transaction`, `Duplicate Transaction`, `Refund Not Received`)
+  - `fraud_suspicion` (Boolean flag)
+  - `priority` (`CRITICAL` | `HIGH` | `MEDIUM` | `LOW`)
+  - `confidence_score` (Float `0.10` to `1.00`)
+  - `risk_tags` (e.g., `VELOCITY_BREACH`, `POSSIBLE_FRAUD`, `CARD_NOT_PRESENT`)
 
-- `http://localhost:8000`
+### 2. Agent 2: Investigation Intelligence Agent (IIA)
+* **Code Registry**: [investigation_agent](file:///d:/Transaction_dispute_agent/ai-dispute-resolution-system/backend/agents/investigation_agent)
+* **Purpose**: Pre-runs database-backed historical intelligence checks on the customer, merchant, and duplicate cases, then designs a structured investigation plan tailored to the category and risk signals.
+* **Database-Backed Tools**:
+  - `lookup_customer_history`: Examines historical dispute volume, chargeback ratios, and frequency trends.
+  - `check_merchant_risk`: Resolves merchant category risk profiles, chargeback ratios, and complaints.
+  - `find_duplicate_transaction`: Audits active disputes for identical merchant/amount/date overlaps within a 72-hour window.
+  - `lookup_related_cases`: Resolves historical case outcomes for similar dispute types.
+* **Key Outputs**:
+  - `recommended_queue` (`CRITICAL_QUEUE` | `FRAUD_QUEUE` | `HIGH_VALUE_QUEUE` | `MERCHANT_QUEUE` | `ATM_QUEUE` | `STANDARD_QUEUE`)
+  - `investigation_complexity` (`LOW` | `MEDIUM` | `HIGH` | `CRITICAL`)
+  - `required_documents` (list of outstanding customer evidence needed)
+  - `recommended_steps` (ordered resolution plan checklist for ops analysts)
+  - `investigation_summary` (comprehensive plan outline)
 
-### Frontend
+### 3. Agent 3: Fraud Reasoning Agent (FRIA)
+* **Code Registry**: [fraud_reasoning_agent](file:///d:/Transaction_dispute_agent/ai-dispute-resolution-system/backend/agents/fraud_reasoning_agent)
+* **Purpose**: Audits transaction parameters for security risk anomalies. Validates geographical travel velocity, z-score spending deviations, customer identity/KYC records, device fingerprints, and prior friendly fraud tendencies.
+* **Database-Backed Tools**:
+  - `detect_transaction_anomalies`: Analyzes transaction off-hours flags and short-term transaction velocity.
+  - `evaluate_location_velocity`: Scans historical transactions to check for geovelocity deviations (impossible travel distance under 4 hours).
+  - `analyze_spending_behavior`: Computes statistical deviation (Z-score) of the transaction amount.
+  - `verify_kyc_match`: Compares dispute details againstCore Customer CIF records.
+  - `evaluate_device_fingerprint`: Audits login logs to check device ID familiarity and location consistency.
+  - `analyze_behavioral_patterns`: Scans customer dispute ratios and resolution profiles to calculate friendly fraud indicators.
+* **Key Outputs**:
+  - `fraud_probability` (Float `0.0` to `1.0` - probability of active fraud)
+  - `fraud_risk_level` (`LOW` | `MEDIUM` | `HIGH` | `CRITICAL`)
+  - `user_trust_score` (Float `0.0` to `1.0` - user trust calibration)
+  - `behavioral_risk_score` (Float `0.0` to `1.0`)
+  - `identity_verification` (`VERIFIED` | `SUSPICIOUS` | `FAILED`)
 
-From `frontend/`:
+### 4. Agent 4: Evidence Intelligence Agent (EIA)
+* **Code Registry**: [evidence_agent](file:///d:/Transaction_dispute_agent/ai-dispute-resolution-system/backend/agents/evidence_agent)
+* **Purpose**: Audits evidence completeness and transaction consistency across customer-submitted files vs bank-obtainable logs. Recommends document request actions if missing evidence blocks the investigation.
+* **Database-Backed Tools**:
+  - `evaluate_evidence_completeness`: Computes completeness percentage against customer-obtainable documents.
+  - `identify_missing_evidence`: Checks unfulfilled document requests and checks if gaps block investigation.
+  - `validate_evidence_consistency`: Cross-checks amount, merchant, and dates against original transaction records.
+  - `assess_evidence_strength`: Weighs completeness, AI verdicts, and data quality (HIGH, MEDIUM, LOW).
+  - `determine_next_document_request`: Dynamically recommends the next document type to formally request from the customer.
+* **Key Outputs**:
+  - `evidence_completeness` (Integer 0-100)
+  - `evidence_strength` (`HIGH` | `MEDIUM` | `LOW`)
+  - `evidence_consistent` (Boolean)
+  - `missing_documents` (List of required documents not yet submitted)
+  - `recommended_document_requests` (List of outstanding document types to request)
+  - `investigation_blocked` (Boolean)
 
+### 5. Agent 5: Workflow Orchestration Agent (WOA)
+* **Code Registry**: [orchestration_agent](file:///d:/Transaction_dispute_agent/ai-dispute-resolution-system/backend/agents/orchestration_agent)
+* **Purpose**: Acts as the workflow controller. Coordinates execution pathing across downstream specialist nodes, handles management escalations, and estimates operational workloads/analyst seniority requirements.
+* **Orchestration Tools**:
+  - `evaluate_case_complexity`: Computes routing complexity based on transaction value, risk tags, and Agent 2 results.
+  - `determine_required_agents`: Evaluates which specialist nodes (Fraud, Merchant, Evidence, Compliance) must run.
+  - `recommend_workflow_path`: Maps sequence for specialist agents.
+  - `assess_escalation_need`: Determines if supervisor approvals are required.
+  - `estimate_workload`: Recommends analyst levels (`LEAD` | `SENIOR` | `STANDARD` | `JUNIOR`) and hours required.
+  - `determine_next_execution_step`: Compares completed agents to execution path to identify the next specialist node.
+* **Key Outputs**:
+  - `workflow_complexity` (`LOW` | `MEDIUM` | `HIGH` | `CRITICAL`)
+  - `required_agents` (e.g., `["FRAUD_AGENT", "EVIDENCE_AGENT"]`)
+  - `workflow_path` (execution sequence, e.g., `["FRAUD_AGENT", "EVIDENCE_AGENT"]`)
+  - `next_agent` (immediate next specialist node to execute)
+  - `escalation_required` (Boolean)
+  - `analyst_level` (`LEAD` | `SENIOR` | `STANDARD` | `JUNIOR`)
+  - `estimated_investigation_hours` (integer)
+
+---
+
+## ── Technical Stack ──
+
+### Backend (Python 3.11)
+* **Framework**: FastAPI
+* **Orchestration**: LangGraph, LangChain
+* **LLM Engine**: ChatGroq (Llama-3.1-8B-Instant)
+* **Database & ORM**: PostgreSQL / SQLite, SQLAlchemy
+* **Document Extraction**: PyMuPDF, pytesseract (OCR)
+* **Resilience**: Tenacity (Exponential backoff retries for LLM rate limits)
+
+### Frontend (Next.js 14)
+* **Framework**: React 18 & TypeScript (Next.js App Router)
+* **Form Management**: React Hook Form, Zod
+* **Styling**: Vanilla CSS Design Tokens (for layouts, cards, grids) & Tailwind CSS
+* **Icons**: Lucide React
+
+---
+
+## ── Local Development Setup ──
+
+All backend configurations and database secrets are loaded dynamically from environment variables.
+
+### 1. Database Migrations & Seeding
+1. **Activate Python Virtual Environment**:
+   ```bash
+   cd backend
+   python -m venv venv
+   # Windows:
+   .\venv\Scripts\activate
+   # macOS/Linux:
+   source venv/bin/activate
+   
+   pip install -r requirements.txt
+   ```
+
+2. **Configure Environment Variables**:
+   Create a `.env` file in the `backend/` directory using the provided template:
+   ```bash
+   cp .env.example .env
+   # Update the values, specifically GROQ_API_KEY
+   ```
+
+3. **Initialize Database Columns**:
+   Runs the database tables creation and applies schemas:
+   ```bash
+   python -c "from database.database import init_db; init_db()"
+   ```
+
+4. **Seed Customer & Transaction Registries**:
+   Populates customer details, transaction history, merchants, and prior logs:
+   ```bash
+   python scripts/seed_postgresql_fixed.py
+   ```
+
+5. **Seed Active Ops Cases**:
+   Populates active case workflows, workflow plans, audit logs, and trust intelligence cards on the internal review dashboard:
+   ```bash
+   python scripts/seed_dispute_cases.py
+   ```
+
+### 2. Running the Backend Server
 ```bash
+# From the backend/ directory
+uvicorn api.main:app --reload
+```
+* **Base URL**: [http://localhost:8000](http://localhost:8000)
+* **API Swagger Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### 3. Running the Frontend Server
+```bash
+# From the frontend/ directory
 npm install
 npm run dev
 ```
+* **Base URL**: [http://localhost:3000](http://localhost:3000)
 
-Frontend default URL:
+---
 
-- `http://localhost:3000`
+## ── Portal Routing & Interaction ──
 
-Useful routes:
-
-- Public submit flow: `/submit-dispute`
-- Customer dashboard: `/customer/dashboard`
-- Ops dashboard: `/ops/dashboard`
-- Internal review board: `/internal-review`
-
-## Environment Notes
-
-The backend expects environment configuration for items such as:
-
-- `DATABASE_URL`
-- `GROQ_API_KEY`
-- optional LLM overrides like `LLM_MODEL`
-- OCR/Tesseract path if needed on Windows
-
-The frontend typically uses:
-
-- `NEXT_PUBLIC_API_URL`
-
-## What This README Reflects
-
-This README documents the current implemented system, not only the target architecture shown in the workflow diagram.
-
-That means:
-
-- The platform vision is broader than the current codebase
-- Only 2 agents are active today
-- Several boxes in the full workflow are currently represented by deterministic services rather than separate agents
-- The existing system is already end-to-end functional for dispute intake, classification, investigation planning, persistence, and review
+* **Dispute Submission Portal**: [http://localhost:3000/submit-dispute](http://localhost:3000/submit-dispute)
+  - Auto-fill Customer Registry: Enter **`CUST-00001`** in the Customer ID input.
+  - Auto-fill Transaction Details: Enter **`TXN-00000001`** in the Transaction ID input.
+* **Ops Review Queue Dashboard**: [http://localhost:3000/internal-review](http://localhost:3000/internal-review)
+  - Displays seeded cases, triage queue groupings, and status filters.
+  - Click on any case (e.g., `CASE-000001`) to open the workspace.
+  - Click the **Trust Intelligence** tab (second tab) to review KYC validations, geographic transaction locations, recognized device history, and prior dispute frequency profiles.

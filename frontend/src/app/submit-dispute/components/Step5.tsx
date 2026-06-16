@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState } from "react";
 import {
-  Upload, X, FileText, Image, FileSpreadsheet, File,
+  Upload, X, FileText, Image as ImageIcon, FileSpreadsheet, File,
   Lock, AlertCircle, CheckCircle2,
 } from "lucide-react";
 import { Panel, SubSection } from "./FormControls";
@@ -28,7 +28,7 @@ function FileIcon({ name }: { name: string }) {
   const ext = name.split(".").pop()?.toLowerCase();
   if (ext === "pdf") return <FileText className="w-4 h-4 text-red-500" />;
   if (ext === "jpg" || ext === "jpeg" || ext === "png")
-    return <Image className="w-4 h-4 text-blue-500" />;
+    return <ImageIcon className="w-4 h-4 text-blue-500" />;
   if (ext === "xlsx" || ext === "csv")
     return <FileSpreadsheet className="w-4 h-4 text-green-600" />;
   return <File className="w-4 h-4 text-slate-400" />;

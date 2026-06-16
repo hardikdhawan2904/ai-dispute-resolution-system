@@ -187,10 +187,16 @@ def finalize_node(state: OrchestrationAgentState) -> dict:
     except Exception as _e:
         agent_logger.warning(f"WOA server-side path validation failed: {_e}")
 
-    # completed_agents — always [] from the orchestrator. Only _save_evidence_to_db
-    # (and equivalent per-agent savers) may mark an agent complete after it actually
-    # runs. Never trust the LLM here — it can hallucinate completed agents.
-    parsed["completed_agents"] = []
+    # completed_agents — preserve LLM-returned list when valid (it may have read
+    # prior tool results correctly); default to []. Auto-mark FRAUD_AGENT complete
+    # when fraud_reasoning_brief already exists from a prior run.
+    if not isinstance(parsed.get("completed_agents"), list):
+        parsed["completed_agents"] = []
+    else:
+        parsed["completed_agents"] = list(parsed["completed_agents"])
+
+    if case_input.get("fraud_reasoning_brief") and "FRAUD_AGENT" not in parsed["completed_agents"]:
+        parsed["completed_agents"].append("FRAUD_AGENT")
 
     # workflow_status — server-stamped deterministically from execution state.
     # LLM's WAITING is honoured (signals a blocking dependency it detected);

@@ -20,6 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
+# pyrefly: ignore [missing-import]
 from database.database import Base
 
 
@@ -252,6 +253,17 @@ class DisputeCase(Base):
     # Agent 3 — WOA (Workflow Orchestration Agent) output
     workflow_plan         = Column(JSON, nullable=True)
 
+    # Identity & Trust Intelligence Agent outputs
+    trust_intelligence    = Column(JSON, nullable=True)
+    user_trust_score      = Column(Float, default=1.0)
+    behavioral_risk_score = Column(Float, default=0.0)
+    identity_status       = Column(String(64), default="PENDING")
+
+    # Fraud Reasoning Agent outputs
+    fraud_reasoning_brief = Column(JSON, nullable=True)
+    fraud_probability     = Column(Float, default=0.0)
+    fraud_risk_level      = Column(String(32), default="LOW")
+
     # Agent 4 — EIA (Evidence Intelligence Agent) output
     evidence_assessment   = Column(JSON, nullable=True)
 
@@ -317,6 +329,13 @@ class DisputeCase(Base):
             "fallback_mode": self.fallback_mode or False,
             "failure_reason": self.failure_reason,
             "workflow_plan": self.workflow_plan,
+            "trust_intelligence": self.trust_intelligence,
+            "user_trust_score": self.user_trust_score,
+            "behavioral_risk_score": self.behavioral_risk_score,
+            "identity_status": self.identity_status,
+            "fraud_reasoning_brief": self.fraud_reasoning_brief,
+            "fraud_probability": self.fraud_probability,
+            "fraud_risk_level": self.fraud_risk_level,
             "evidence_assessment": self.evidence_assessment,
             "created_at": _iso(self.created_at),
             "updated_at": _iso(self.updated_at),

@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Shield, Lock } from "lucide-react";
 
 import { formSchema, FormValues } from "./schema";
@@ -56,6 +56,10 @@ export default function SubmitDisputePage() {
   const [submitting,    setSubmitting]    = useState(false);
   const [apiError,      setApiError]      = useState("");
   const [filesError,    setFilesError]    = useState("");
+
+  useEffect(() => {
+    document.title = "Submit Dispute | BFSI Dispute Resolution Platform";
+  }, []);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),

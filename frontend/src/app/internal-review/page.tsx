@@ -43,6 +43,10 @@ export default function InternalReviewPage() {
   const [fraudOnly, setFraudOnly]           = useState(false);
 
   useEffect(() => {
+    document.title = "Case Queue | BFSI Dispute Resolution Platform";
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     listCases({ limit: 50 })
@@ -136,7 +140,15 @@ export default function InternalReviewPage() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.7rem", padding: "0.3rem 0.75rem", border: "1px solid #334155", borderRadius: 3, color: isConnected ? "#4ADE80" : "#64748B", backgroundColor: "#111827" }}>
-            {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+            {isConnected ? (
+              <span title="Live Connection Active">
+                <Wifi className="w-3 h-3" />
+              </span>
+            ) : (
+              <span title="Offline Mode">
+                <WifiOff className="w-3 h-3" />
+              </span>
+            )}
             {isConnected ? "Live" : "Offline"}
           </div>
           <button
@@ -144,7 +156,9 @@ export default function InternalReviewPage() {
             className="btn-ghost"
             style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}
           >
-            <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+            <span title="Refresh Queue">
+              <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+            </span>
             Refresh
           </button>
         </div>

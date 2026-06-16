@@ -174,6 +174,16 @@ async def reanalyse_case(case_id: str):
                     document_texts.append(f"[{f.name}]\n{text}")
 
     def _run_analysis():
+        from agents.fraud_reasoning_agent import run_fraud_reasoning_agent
+        from workflows.dispute_workflow import _save_fraud_reasoning_to_db
+        try:
+            fraud_res = run_fraud_reasoning_agent({}, case_id=case_id)
+            if fraud_res:
+                _save_fraud_reasoning_to_db(case_id, fraud_res)
+        except Exception as exc:
+            from utils.logger import api_logger
+            api_logger.warning(f"Reanalyse fraud agent failed for {case_id}: {exc}")
+
         # Agent 1 reads its input from DB by case_id — no manual dict needed
         return run_dispute_agent({}, case_id=case_id, document_texts=document_texts)
 
@@ -331,6 +341,16 @@ async def analyse_uploads(case_id: str):
         return {"case_id": case_id, "analysed": 0, "files": files}
 
     def _run_analysis():
+        from agents.fraud_reasoning_agent import run_fraud_reasoning_agent
+        from workflows.dispute_workflow import _save_fraud_reasoning_to_db
+        try:
+            fraud_res = run_fraud_reasoning_agent({}, case_id=case_id)
+            if fraud_res:
+                _save_fraud_reasoning_to_db(case_id, fraud_res)
+        except Exception as exc:
+            from utils.logger import api_logger
+            api_logger.warning(f"Analyse uploads fraud agent failed for {case_id}: {exc}")
+
         # Agent 1 reads its input from DB by case_id
         return run_dispute_agent({}, case_id=case_id, document_texts=document_texts)
 
