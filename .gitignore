@@ -54,6 +54,5 @@ backend/chroma_db/
 logs/
 backend/logs/
 
-# ── Developer tooling ─────────────────────────────────────────────────────────
 .claude/
 
