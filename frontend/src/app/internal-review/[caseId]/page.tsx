@@ -834,7 +834,9 @@ export default function CaseWorkspace() {
                       {ea.investigation_blocked ? "Blocked" : "Can Proceed"}
                     </div>
                     <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>
-                      {ea.missing_documents?.length ? `${ea.missing_documents.length} doc(s) missing` : "All docs present"}
+                      {(ea.missing_documents ?? []).filter((d: string) => !BANK_OBTAINABLE.has(d)).length > 0
+                        ? `${(ea.missing_documents ?? []).filter((d: string) => !BANK_OBTAINABLE.has(d)).length} customer doc(s) missing`
+                        : "All customer docs present"}
                     </div>
                   </Panel>
                   <Panel>
@@ -892,6 +894,30 @@ export default function CaseWorkspace() {
                     </Panel>
                   );
                 })()}
+
+                {/* ── Section 3b: Bank-Obtainable Docs (informational, not customer-facing) ── */}
+                {(ea.bank_pending_documents?.length ?? 0) > 0 && (
+                  <Panel style={{ border: "1px solid #334155" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.625rem" }}>
+                      <SectionTitle>Pending — Bank to Obtain</SectionTitle>
+                      <span style={{ fontSize: "0.6rem", color: "#475569", fontWeight: 500, padding: "0.1rem 0.5rem", border: "1px solid #334155", borderRadius: 3 }}>
+                        Internal
+                      </span>
+                    </div>
+                    <p style={{ fontSize: "0.68rem", color: "#475569", marginBottom: "0.625rem", lineHeight: 1.5 }}>
+                      These documents are obtained by the bank or merchant internally — not the customer&apos;s responsibility.
+                      They do not affect evidence completeness.
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.375rem" }}>
+                      {ea.bank_pending_documents!.map((doc: string, i: number) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.625rem", backgroundColor: "#111827", border: "1px solid #334155", borderRadius: 3 }}>
+                          <FileText style={{ width: 11, height: 11, color: "#475569", flexShrink: 0 }} />
+                          <span style={{ fontSize: "0.7rem", color: "#64748B" }}>{doc}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Panel>
+                )}
 
                 {/* ── Section 4: Recommended Document Requests (customer-obtainable only) ── */}
                 {(ea.recommended_document_requests ?? []).filter((d: string) => !BANK_OBTAINABLE.has(d)).length > 0 && (

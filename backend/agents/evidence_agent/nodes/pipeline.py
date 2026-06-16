@@ -242,44 +242,87 @@ def finalize_node(state: EvidenceAgentState) -> dict:
 
     # ── Server-stamp fields that must be internally consistent ────────────────
     # evidence_consistent: true only when there are no actual issues.
-    # The LLM sometimes sets this True while also populating consistency_issues.
     real_issues = [
         i for i in (parsed.get("consistency_issues") or [])
-        if "not found" not in i.lower()  # "Transaction not found" is informational, not a mismatch
+        if "not found" not in i.lower()
     ]
     parsed["evidence_consistent"] = len(real_issues) == 0
 
     # investigation_blocked: recompute from hard signals — never trust LLM for this.
-    missing_docs = parsed.get("missing_documents") or []
     strength     = parsed.get("evidence_strength", "MEDIUM")
     ev_match     = case_input.get("evidence_match")
     completeness = parsed["evidence_completeness"]
 
-    # Count uploads so we don't block when the customer HAS submitted files
-    # even though no formal document requests were created yet.
-    from agents.evidence_agent.tools import _count_uploads
+    from agents.evidence_agent.tools import _count_uploads, _split_docs
     upload_count = _count_uploads(case_input.get("case_id", ""))
 
+    # ── Server-stamp missing_documents and recommended_document_requests ──────
+    # The LLM frequently lists docs as missing even when uploads already cover them.
+    # Recompute from the same upload-credit logic used in the tools so the output
+    # is always consistent with evidence_completeness and investigation_blocked.
+    inv_plan      = case_input.get("investigation_plan") or {}
+    all_required  = inv_plan.get("required_documents", []) if isinstance(inv_plan, dict) else []
+    customer_docs, bank_docs = _split_docs(all_required)
+
+    # Replicate Tools 1 & 2 logic: formal requests + upload credits
+    from database.database import SessionLocal
+    from database.models import DocumentRequest as _DR
+    _db = SessionLocal()
+    try:
+        _reqs = _db.query(_DR).filter(_DR.case_id == case_id).all()
+        fulfilled_types = {r.document_type.lower() for r in _reqs if r.fulfilled}
+    except Exception:
+        fulfilled_types = set()
+    finally:
+        _db.close()
+
+    def _is_fulfilled_req(doc: str) -> bool:
+        d = doc.lower()
+        return any(d in ft or ft in d for ft in fulfilled_types)
+
+    req_without = [d for d in customer_docs if not _is_fulfilled_req(d)]
+    upload_credits = min(upload_count, len(req_without)) if ev_match is True else 0
+    missing_docs = req_without[upload_credits:]  # authoritative missing list
+
+    parsed["missing_documents"] = missing_docs
+    # Recommended requests = missing customer docs not already pending
+    _pending_types = set()
+    _db2 = SessionLocal()
+    try:
+        _pending = _db2.query(_DR).filter(_DR.case_id == case_id, _DR.fulfilled == False).all()
+        _pending_types = {r.document_type.lower() for r in _pending}
+    except Exception:
+        pass
+    finally:
+        _db2.close()
+
+    parsed["recommended_document_requests"] = [
+        d for d in missing_docs
+        if not any(d.lower() in p or p in d.lower() for p in _pending_types)
+    ]
+
+    # Bank-obtainable docs — server-stamped, informational only.
+    # These are obtained by the bank/merchant internally; they do NOT affect
+    # completeness, strength, or investigation_blocked.
+    parsed["bank_pending_documents"] = bank_docs
+
     parsed["investigation_blocked"] = (
-        (ev_match is False and len(missing_docs) > 0)                  # hard mismatch
-        or (strength == "LOW" and len(missing_docs) > 0 and upload_count == 0)  # low + no uploads at all
-        or (completeness < 25 and upload_count == 0 and ev_match is not True)   # very low + no evidence
+        (ev_match is False and len(missing_docs) > 0)
+        or (strength == "LOW" and len(missing_docs) > 0 and upload_count == 0)
+        or (completeness < 25 and upload_count == 0 and ev_match is not True)
     )
 
-    # manual_evidence_review: required whenever blocked or LOW strength.
     parsed["manual_evidence_review"] = (
         parsed["investigation_blocked"] or strength == "LOW"
     )
 
-    # review_recommendation: single source of truth from investigation_blocked.
     parsed["review_recommendation"] = (
         "Additional documentation required before investigation can proceed."
         if parsed["investigation_blocked"]
         else "Evidence is sufficient to continue the investigation."
     )
 
-    # ── Server-stamp evidence_summary from actual tool results ─────────────────
-    # Build the summary deterministically so it always matches what the tools found.
+    # ── Server-stamp evidence_summary ─────────────────────────────────────────
     parsed["evidence_summary"] = _build_evidence_summary(
         completeness    = parsed["evidence_completeness"],
         strength        = parsed["evidence_strength"],
@@ -362,6 +405,9 @@ def _fallback_output(
             "Automated evidence assessment failed — fallback applied.",
         ]
 
+    from agents.evidence_agent.tools import _split_docs
+    customer_fb, bank_fb = _split_docs(req_docs)
+
     return {
         "case_id":                      case_id,
         "evidence_completeness":        completeness,
@@ -371,8 +417,9 @@ def _fallback_output(
         "consistency_issues":           [] if ev_match is not False else [
             "Agent 1 evidence mismatch — documents do not support the claimed transaction"
         ],
-        "missing_documents":            req_docs,
-        "recommended_document_requests": req_docs[:3] if req_docs else [],
+        "missing_documents":            customer_fb,
+        "recommended_document_requests": customer_fb[:3] if customer_fb else [],
+        "bank_pending_documents":       bank_fb,
         "investigation_blocked":        blocked,
         "evidence_summary":             summary,
         "review_recommendation": (

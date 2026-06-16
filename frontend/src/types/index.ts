@@ -204,6 +204,7 @@ export interface EvidenceAssessment {
   consistency_issues: string[];
   missing_documents: string[];
   recommended_document_requests: string[];
+  bank_pending_documents?: string[];
   investigation_blocked: boolean;
   evidence_summary: string[];
   review_recommendation: string;
