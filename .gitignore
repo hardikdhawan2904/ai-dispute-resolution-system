@@ -54,3 +54,6 @@ backend/chroma_db/
 logs/
 backend/logs/
 
+# ── Claude Code internal ───────────────────────────────────────────────────────
+.claude/worktrees/
+
