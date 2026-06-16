@@ -11,6 +11,7 @@ finalize_node       : parse the LLM's final JSON, stamp server-owned fields, ret
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import Literal
 
@@ -259,42 +260,111 @@ def finalize_node(state: DisputeAgentState) -> dict:
     parsed["tools_used"]     = tools_used
     parsed["agent_metadata"] = agent_metadata
 
-    # ── Server-side confidence score ──────────────────────────────────────────
-    ev_match = parsed.get("evidence_match")
-    comment  = str(d.get("customer_comment") or "")
+    # ── Parse pre-computed tool outputs from HumanMessage ────────────────────
+    _evidence_verdict   = "NO_DOCUMENTS"
+    _fraud_signal_level = "NONE"
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            for line in msg.content.splitlines():
+                s = line.strip()
+                if not s:
+                    continue
+                # verify_evidence_match: "Verdict              : MATCH"
+                if s.startswith("Verdict") and ":" in s:
+                    val = s.split(":", 1)[1].strip()
+                    if val in ("MATCH", "PARTIAL_MATCH", "MISMATCH",
+                               "NO_DOCUMENTS", "CANNOT_VERIFY"):
+                        _evidence_verdict = val
+                # score_fraud_indicators: "Fraud Signal Level   : HIGH (score: …)"
+                if s.startswith("Fraud Signal Level") and ":" in s:
+                    val = s.split(":", 1)[1].strip().split()[0]
+                    if val in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"):
+                        _fraud_signal_level = val
+            break  # HumanMessage is the first non-system message
+
+    # ── Server-side confidence score (aligned with Tool 4 formula) ───────────
+    comment    = str(d.get("customer_comment") or "")
+    comment_lc = comment.lower()
+    fraud_flag = bool(parsed.get("fraud_suspicion"))
+    category   = str(parsed.get("dispute_category") or "")
+
     conf = 0.50
+
+    # Data completeness (±0.10)
     if all(d.get(f) for f in _REQUIRED_FIELDS):
         conf += 0.10
+    else:
+        conf -= 0.10
+
+    # Comment quality (±0.10)
     if len(comment) >= 80:
         conf += 0.10
     elif len(comment) < 30:
         conf -= 0.10
-    if ev_match is True:
-        conf += 0.20
-    elif ev_match is False:
-        conf -= 0.20
-    if bool(parsed.get("fraud_suspicion")) and str(parsed.get("dispute_category") or "") in _FRAUD_CATEGORIES:
-        conf += 0.15
+
+    # Evidence verdict — highest impact (±0.25)
+    if _evidence_verdict == "MATCH":
+        conf += 0.25
+    elif _evidence_verdict == "PARTIAL_MATCH":
+        conf += 0.10
+    elif _evidence_verdict == "MISMATCH":
+        conf -= 0.25
+    # NO_DOCUMENTS, CANNOT_VERIFY: +0.00
+
+    # Fraud signal alignment (±0.15 / +0.08 / -0.12)
+    if fraud_flag and category in _FRAUD_CATEGORIES:
+        if _fraud_signal_level in ("CRITICAL", "HIGH"):
+            conf += 0.15
+        elif _fraud_signal_level == "MEDIUM":
+            conf += 0.08
+    elif fraud_flag and category not in _FRAUD_CATEGORIES:
+        if _fraud_signal_level in ("CRITICAL", "HIGH"):
+            conf -= 0.12  # high fraud signals inconsistent with stated category
+
     parsed["confidence_score"] = round(max(0.10, min(1.00, conf)), 2)
 
-    # ── Server-side risk tag validation ───────────────────────────────────────
+    # ── Server-side risk tag enforcement ──────────────────────────────────────
     amount      = float(d.get("amount") or 0)
-    fraud_flag  = bool(parsed.get("fraud_suspicion"))
     tx_type     = (d.get("transaction_type") or "").upper()
     merchant_lc = (d.get("merchant") or "").lower()
     is_intl     = any(s in merchant_lc for s in _INTL_SIGNALS) or tx_type == "INTERNATIONAL"
     is_foreign  = (d.get("currency") or "INR").upper() != "INR"
-    comment_lc  = comment.lower()
+    meta        = d.get("transaction_metadata") or {}
 
-    parsed["risk_tags"] = [
-        tag for tag in (parsed.get("risk_tags") or [])
-        if not (
-            (tag == "HIGH_VALUE_TRANSACTION"    and amount < 50_000)
-            or (tag == "INTERNATIONAL_TRANSACTION" and not is_intl and not is_foreign)
-            or (tag == "POSSIBLE_FRAUD"            and not fraud_flag)
-            or (tag == "VELOCITY_BREACH"           and "within" not in comment_lc)
-        )
-    ]
+    def _meta_yes(k: str) -> bool:
+        return str(meta.get(k) or "").strip().lower() in {"yes", "true", "1"}
+
+    # Improved velocity signal detection
+    _VELOCITY_SIGNALS = {
+        "within", "multiple transaction", "charged twice", "charged again",
+        "back to back", "repeated charge", "charged multiple",
+        "two transaction", "three transaction",
+    }
+    _has_velocity = any(kw in comment_lc for kw in _VELOCITY_SIGNALS)
+
+    tags = set(parsed.get("risk_tags") or [])
+
+    # Strip tags when deterministically invalid
+    if amount < 50_000:
+        tags.discard("HIGH_VALUE_TRANSACTION")
+    if not (is_intl or is_foreign):
+        tags.discard("INTERNATIONAL_TRANSACTION")
+    if not fraud_flag:
+        tags.discard("POSSIBLE_FRAUD")
+    if not _has_velocity:
+        tags.discard("VELOCITY_BREACH")
+
+    # Enforce tags that must always be present when condition is true
+    if amount >= 50_000:
+        tags.add("HIGH_VALUE_TRANSACTION")
+    if is_intl or is_foreign:
+        tags.add("INTERNATIONAL_TRANSACTION")
+    if fraud_flag:
+        tags.add("POSSIBLE_FRAUD")
+    if _meta_yes("sim_swap_suspected"):
+        tags.add("SUSPICIOUS_BEHAVIOR")
+
+    parsed["risk_tags"] = sorted(tags)
     # Stamp fallback_activated=False into metrics for normal runs
     metrics["fallback_activated"] = False
     parsed["metrics"]        = metrics

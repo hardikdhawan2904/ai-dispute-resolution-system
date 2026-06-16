@@ -525,6 +525,7 @@ def _safe_case_dict(case: dict) -> dict:
         "locked_at": case.get("locked_at"),
         "created_at": case.get("created_at") or "",
         "updated_at": case.get("updated_at"),
-        "investigation_plan": case.get("investigation_plan"),
-        "workflow_plan":      case.get("workflow_plan"),
+        "investigation_plan":  case.get("investigation_plan"),
+        "workflow_plan":       case.get("workflow_plan"),
+        "evidence_assessment": case.get("evidence_assessment"),
     }

@@ -126,8 +126,9 @@ class DisputeCaseResponse(BaseModel):
     locked_at: Optional[str] = None
     created_at: str
     updated_at: Optional[str]
-    investigation_plan: Optional[dict] = None
-    workflow_plan: Optional[dict] = None
+    investigation_plan:  Optional[dict] = None
+    workflow_plan:       Optional[dict] = None
+    evidence_assessment: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 

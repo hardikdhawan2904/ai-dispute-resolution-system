@@ -775,7 +775,7 @@ export default function CaseWorkspace() {
                     style={{ fontSize: "0.75rem", fontWeight: 600, padding: "0.5rem 1.25rem", backgroundColor: runningEIA ? "#334155" : "#2563EB", color: "#F8FAFC", border: "none", borderRadius: 4, cursor: runningEIA ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
                   >
                     {runningEIA && <Loader2 className="w-3 h-3 animate-spin" />}
-                    {runningEIA ? "Running Evidence Review…" : "Re-run Evidence Review"}
+                    {runningEIA ? "Running Evidence Review…" : "Run Evidence Review"}
                   </button>
                 </Panel>
               </div>
@@ -816,13 +816,13 @@ export default function CaseWorkspace() {
                       const infoOnly = (ea.consistency_issues ?? []).length > 0 && realIssues.length === 0;
                       return (
                         <>
-                          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: realIssues.length > 0 ? "#FCA5A5" : "#4ADE80" }}>
-                            {realIssues.length > 0 ? "Issues Found" : "Consistent"}
+                          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: realIssues.length > 0 ? "#FCA5A5" : infoOnly ? "#FCD34D" : "#4ADE80" }}>
+                            {realIssues.length > 0 ? "Issues Found" : infoOnly ? "Unverified" : "Consistent"}
                           </div>
                           <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>
                             {realIssues.length > 0
                               ? `${realIssues.length} mismatch(es)`
-                              : infoOnly ? "Record not found" : "No issues"}
+                              : infoOnly ? "Txn record not found" : "No issues"}
                           </div>
                         </>
                       );

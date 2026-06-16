@@ -240,6 +240,39 @@ def finalize_node(state: EvidenceAgentState) -> dict:
     except (TypeError, ValueError):
         parsed["evidence_strength_score"] = 0.50
 
+    # ── Server-stamp evidence_strength / score / completeness from tool output ─
+    # Tool 4 (assess_evidence_strength) computes these deterministically.
+    # Always override LLM values to prevent hallucinated strength/score.
+    _es_raw = tool_results.get("assess_evidence_strength", "")
+    if _es_raw:
+        for _line in _es_raw.splitlines():
+            _s = _line.strip()
+            if _s.startswith("Strength") and "Score" not in _s and ":" in _s:
+                _v = _s.split(":", 1)[1].strip()
+                if _v in ("HIGH", "MEDIUM", "LOW"):
+                    parsed["evidence_strength"] = _v
+            elif _s.startswith("Strength Score") and ":" in _s:
+                try:
+                    parsed["evidence_strength_score"] = round(
+                        float(_s.split(":", 1)[1].strip()), 2
+                    )
+                except (ValueError, IndexError):
+                    pass
+
+    _ec_raw = tool_results.get("evaluate_evidence_completeness", "")
+    if _ec_raw:
+        for _line in _ec_raw.splitlines():
+            _s = _line.strip()
+            if _s.startswith("Completeness Score") and ":" in _s:
+                try:
+                    # Format: "Completeness Score       : 75% (customer docs only)"
+                    parsed["evidence_completeness"] = int(
+                        _s.split(":", 1)[1].strip().split("%")[0].strip()
+                    )
+                except (ValueError, IndexError):
+                    pass
+                break
+
     # ── Server-stamp fields that must be internally consistent ────────────────
     # evidence_consistent: true only when there are no actual issues.
     real_issues = [

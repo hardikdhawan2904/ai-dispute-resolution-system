@@ -337,6 +337,19 @@ def _save_agent3_to_db(case_id: str, workflow_plan: dict) -> None:
     try:
         case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
         if case:
+            # Preserve completed_agents from prior runs (e.g. EIA already ran before re-analyse).
+            # The orchestrator always outputs [] — we merge the real history back in.
+            existing = case.workflow_plan or {}
+            prior_completed = existing.get("completed_agents") if isinstance(existing, dict) else []
+            if prior_completed:
+                merged = dict(workflow_plan)
+                merged["completed_agents"] = prior_completed
+                # Recalculate next_agent / remaining so they stay consistent.
+                path = merged.get("workflow_path") or []
+                remaining = [a for a in path if a not in prior_completed]
+                merged["remaining_agents"] = remaining
+                merged["next_agent"] = remaining[0] if remaining else None
+                workflow_plan = merged
             case.workflow_plan  = workflow_plan
             case.current_stage  = "agent3_complete"
             db.commit()

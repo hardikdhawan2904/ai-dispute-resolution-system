@@ -176,6 +176,26 @@ def finalize_node(state: InvestigationAgentState) -> dict:
         "related_cases_reviewed":    "lookup_related_cases" in tools_used,
     }
 
+    # ── Server-stamp data_quality_score from actual investigation coverage ────
+    # Deterministic from coverage (must run after investigation_coverage is stamped).
+    _cov      = parsed["investigation_coverage"]
+    _tools_ran = sum(1 for v in _cov.values() if v)
+    # 0→0.30, 1→0.50, 2→0.65, 3→0.80, 4→0.90
+    _dq_table = {0: 0.30, 1: 0.50, 2: 0.65, 3: 0.80, 4: 0.90}
+    _dq = _dq_table.get(_tools_ran, 0.50)
+
+    # Richness bonus: tools that returned actual data (not errors or zero results)
+    if tool_results.get("lookup_customer_history", "") and \
+            "Error:" not in tool_results["lookup_customer_history"]:
+        _dq += 0.02
+    if tool_results.get("check_merchant_risk", "") and \
+            "Error:" not in tool_results["check_merchant_risk"]:
+        _dq += 0.02
+    _hist = tool_results.get("lookup_related_cases", "")
+    if _hist and "Error:" not in _hist and "Similar Cases        : 0" not in _hist:
+        _dq += 0.03  # historical precedent found — richer data
+    parsed["data_quality_score"] = round(max(0.10, min(1.00, _dq)), 2)
+
     # Merge Agent 1 classification fields into plan dict for confidence calculation
     # (fraud_suspicion, dispute_category, risk_tags come from a1, not the LLM output)
     confidence_input = {
