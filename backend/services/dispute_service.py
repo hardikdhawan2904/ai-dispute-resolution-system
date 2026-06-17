@@ -202,6 +202,126 @@ class DisputeService:
             "final_case": db_case.to_dict(),
         }
 
+    @staticmethod
+    def run_pipeline(dispute_input: dict, document_texts: List[str]) -> dict:
+        """
+        Run Steps 2-4 of the submission pipeline in the background.
+        Creates its own DB session so it can run after the HTTP response has been sent.
+        """
+        from database.database import SessionLocal
+        from database.models import DisputeCase
+        db = SessionLocal()
+        try:
+            case_id = dispute_input["case_id"]
+            db_case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
+            if not db_case:
+                api_logger.error(f"run_pipeline: case {case_id} not found in DB")
+                return {"success": False}
+
+            # Step 2: Run LangGraph workflow
+            workflow_result    = run_dispute_workflow(dispute_input, document_texts=document_texts)
+            final_case         = workflow_result.get("final_case")
+            validation_errors  = workflow_result.get("validation_errors", [])
+            execution_trace    = workflow_result.get("execution_trace", [])
+
+            if not final_case:
+                db_case.status         = "Rejected"
+                db_case.workflow_ready = False
+                DisputeService._append_audit_log(
+                    db=db, case_id=case_id,
+                    event_type="VALIDATION_FAILED", stage="validation",
+                    message=f"Submission rejected: {'; '.join(validation_errors)}",
+                    payload={"errors": validation_errors},
+                )
+                db.commit()
+                return {"success": False, "errors": validation_errors}
+
+            # Step 3: Enterprise enrichment
+            priority_score, priority_label = compute_priority(final_case)
+            final_case["priority"]         = priority_label
+            final_case["priority_score"]   = priority_score
+            queue                          = assign_queue(final_case)
+            final_case["assigned_queue"]   = queue
+            sla_deadline                   = compute_sla_deadline(priority_label)
+            final_case["sla_deadline"]     = sla_deadline
+            manual_flag, manual_reason     = should_flag_manual_review(final_case)
+            final_case["requires_manual_review"] = manual_flag
+            final_case["manual_review_reason"]   = manual_reason if manual_flag else None
+
+            if final_case.get("fallback_mode"):
+                failure_reason = final_case.get("failure_reason", "UNKNOWN_ERROR")
+                final_case["requires_manual_review"] = True
+                final_case["manual_review_reason"] = (
+                    f"AI service was unavailable at submission time (failure: {failure_reason}). "
+                    "Automated dispute classification could not be completed — manual investigation required."
+                )
+
+            inv_plan            = final_case.get("investigation_plan") or {}
+            has_required_docs   = isinstance(inv_plan, dict) and bool(inv_plan.get("required_documents"))
+            documents_submitted = bool(document_texts)
+            if documents_submitted:
+                final_case["status"] = "Under Investigation"
+            elif has_required_docs:
+                final_case["status"] = "Pending Documents"
+            else:
+                final_case["status"] = "Dispute Raised"
+
+            # Step 4: Update DB record with full results
+            DisputeService._update_case_with_results(db_case, final_case, db)
+            sync_on_submission(db_case, db)
+
+            dup_of = find_duplicate(
+                db_case.customer_id, db_case.transaction_id,
+                db_case.amount, db_case.merchant or "", db,
+                exclude_case_id=case_id,
+            )
+            if dup_of:
+                db_case.duplicate_of = dup_of
+                DisputeService._append_audit_log(
+                    db=db, case_id=case_id,
+                    event_type="DUPLICATE_DETECTED", stage="post_analysis",
+                    message=f"Possible duplicate of case {dup_of}",
+                    payload={"duplicate_of": dup_of},
+                )
+
+            if manual_flag or final_case.get("fallback_mode"):
+                reason_msg = final_case.get("manual_review_reason") or manual_reason or ""
+                DisputeService._append_audit_log(
+                    db=db, case_id=case_id,
+                    event_type="MANUAL_REVIEW_FLAGGED", stage="post_analysis",
+                    message=reason_msg, payload={"reason": reason_msg},
+                )
+
+            if final_case.get("fallback_mode"):
+                failure_reason = final_case.get("failure_reason", "UNKNOWN_ERROR")
+                DisputeService._append_audit_log(
+                    db=db, case_id=case_id,
+                    event_type="AGENT1_FALLBACK_ACTIVATED", stage="dispute_understanding",
+                    message=f"Agent 1 (ARIA) fallback activated. Failure: {failure_reason}.",
+                    payload={"fallback_mode": True, "failure_reason": failure_reason},
+                )
+
+            DisputeService._append_audit_log(
+                db=db, case_id=case_id,
+                event_type="CASE_CREATED", stage="structured_output",
+                message=f"Analysis complete. Category: {db_case.dispute_category}, Priority: {db_case.priority}",
+                payload={"confidence_score": db_case.confidence_score,
+                         "risk_tags": db_case.risk_tags, "assigned_queue": queue,
+                         "priority_score": priority_score},
+            )
+            DisputeService._persist_workflow_states(db, case_id, execution_trace)
+            db.commit()
+
+            audit_logger.info("Background pipeline complete", extra={"case_id": case_id})
+            return {"success": True, "case_id": case_id, "final_case": db_case.to_dict()}
+
+        except Exception as exc:
+            api_logger.error(f"run_pipeline error for {dispute_input.get('case_id')}: {exc}", exc_info=True)
+            db.rollback()
+            return {"success": False}
+        finally:
+            db.close()
+
     # ── Retrieval ──────────────────────────────────────────────────────────────
 
     @staticmethod

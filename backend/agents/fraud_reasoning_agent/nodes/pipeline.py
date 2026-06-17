@@ -383,13 +383,30 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     behavioral_risk_score = round(max(0.00, min(1.00, risk_score_calc)), 2)
 
     # Fraud Probability calculation
+    # Signals from transaction anomaly tools
     prob = 0.0
     if amount_anomaly:       prob += 0.20
     if time_anomaly:         prob += 0.15
     if velocity_anomaly:     prob += 0.30
     if geovelocity_breach:   prob += 0.25
-    if unrecognized_device:   prob += 0.30
-    if location_mismatch:     prob += 0.20
+    if unrecognized_device:  prob += 0.15  # reduced — device alone is weak signal
+    if location_mismatch:    prob += 0.20
+
+    # Signals from customer-submitted fraud metadata (strongest indicators)
+    meta = d.get("transaction_metadata") or {}
+    def _yes(k: str) -> bool:
+        return str(meta.get(k) or "").strip().lower() in {"yes", "true", "1"}
+
+    if _yes("bank_impersonation"):  prob += 0.30  # caller claimed to be bank staff
+    if _yes("remote_access"):       prob += 0.25  # AnyDesk / TeamViewer installed
+    if _yes("screen_sharing"):      prob += 0.20  # screen shared with attacker
+    if _yes("otp_shared"):          prob += 0.20  # OTP handed to fraudster
+    if _yes("sim_swap_suspected"):  prob += 0.20  # SIM takeover
+    if _yes("phishing_link"):       prob += 0.15  # clicked fake link
+    if _yes("unknown_beneficiary"): prob += 0.10  # money sent to unknown person
+    if _yes("device_lost"):         prob += 0.10  # physical device theft
+    if _yes("card_lost"):           prob += 0.10  # card physically stolen
+    if bool(d.get("fraud_selected")): prob += 0.10  # customer explicitly flagged fraud
 
     fraud_probability = round(max(0.00, min(1.00, prob)), 2)
 

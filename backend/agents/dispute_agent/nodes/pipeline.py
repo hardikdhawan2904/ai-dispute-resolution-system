@@ -135,7 +135,21 @@ def build_evidence_node(state: DisputeAgentState) -> dict:
         f"### verify_evidence_match\n{evidence_result}\n"
     )
 
-    masked_document_section = mask_document(document_section)
+    # Tool pre-computation already analyzed all documents via verify_evidence_match.
+    # Passing raw doc text to the LLM is redundant and causes token overflow on
+    # Groq's on-demand tier (6000 TPM). Show only a compact summary instead.
+    if doc_texts:
+        _filenames = []
+        for t in doc_texts:
+            first_line = t.split("\n", 1)[0].strip()
+            _filenames.append(first_line[1:-1] if first_line.startswith("[") else "document")
+        masked_document_section = (
+            f"{len(_filenames)} document(s) attached: "
+            + ", ".join(_filenames)
+            + "\n(Full text analyzed by verify_evidence_match — see PRE-COMPUTED TOOL RESULTS below.)"
+        )
+    else:
+        masked_document_section = "No documents attached."
 
     # Build initial messages — LLM receives all tool outputs, produces JSON in one call
     human_content = DISPUTE_DATA_TEMPLATE.format(
@@ -293,12 +307,17 @@ def finalize_node(state: DisputeAgentState) -> dict:
     def _infer_doc_type(fn: str) -> str:
         f = fn.lower()
         if ("bank" in f and "statement" in f) or "statement" in f: return "BANK_STATEMENT"
+        if "fir" in f or "police" in f or "complaint_report" in f: return "POLICE_FIR"
+        if "otp" in f:                                              return "OTP_RECORD"
+        if "sms" in f or "alert" in f or "debit_alert" in f:       return "TRANSACTION_ALERT"
+        if "complaint" in f:                                        return "COMPLAINT_LETTER"
+        if "kyc" in f or "aadhaar" in f or "aadhar" in f or "passport" in f or "pan" in f: return "IDENTITY_DOCUMENT"
+        if "source_of_funds" in f or "fund" in f or "salary" in f: return "FINANCIAL_DECLARATION"
         if "refund" in f or "email" in f or "mail" in f:           return "MERCHANT_COMMUNICATION"
         if "receipt" in f:                                          return "PAYMENT_RECEIPT"
         if "invoice" in f:                                          return "INVOICE"
         if "screenshot" in f or "screen" in f:                     return "TRANSACTION_SCREENSHOT"
-        if "otp" in f:                                              return "OTP_RECORD"
-        if "id" in f or "passport" in f or "aadhaar" in f:         return "IDENTITY_DOCUMENT"
+        if "id" in f:                                               return "IDENTITY_DOCUMENT"
         if "photo" in f or "img" in f or "image" in f:             return "PHOTO_EVIDENCE"
         if "upi" in f:                                              return "UPI_RECORD"
         return "SUPPORTING_DOCUMENT"
@@ -400,6 +419,22 @@ def finalize_node(state: DisputeAgentState) -> dict:
 
     tags = set(parsed.get("risk_tags") or [])
 
+    # Known scam merchant keywords — MERCHANT_BLACKLISTED is only valid for these
+    _SCAM_MERCHANT_SIGNALS = {
+        "crypto", "bitcoin", "lottery", "prize", "lucky", "investment",
+        "forex", "trading", "stock", "casino", "bet", "gambling",
+        "ponzi", "scheme", "doubling", "forex",
+    }
+    _merchant_is_scam = any(s in merchant_lc for s in _SCAM_MERCHANT_SIGNALS)
+
+    # Recurring/subscription signals in dispute reason or comment
+    _RECURRING_SIGNALS = {
+        "subscription", "recurring", "monthly", "auto-debit", "auto debit",
+        "emi", "standing instruction", "repeat charge",
+    }
+    _dispute_reason_lc = (d.get("dispute_reason") or "").lower()
+    _has_recurring = any(kw in comment_lc or kw in _dispute_reason_lc for kw in _RECURRING_SIGNALS)
+
     # Strip tags when deterministically invalid
     if amount < 50_000:
         tags.discard("HIGH_VALUE_TRANSACTION")
@@ -409,6 +444,10 @@ def finalize_node(state: DisputeAgentState) -> dict:
         tags.discard("POSSIBLE_FRAUD")
     if not _has_velocity:
         tags.discard("VELOCITY_BREACH")
+    if not _merchant_is_scam:
+        tags.discard("MERCHANT_BLACKLISTED")
+    if not _has_recurring:
+        tags.discard("RECURRING_DISPUTE")
 
     # Enforce tags that must always be present when condition is true
     if amount >= 50_000:

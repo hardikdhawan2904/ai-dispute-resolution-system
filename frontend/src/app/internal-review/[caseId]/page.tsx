@@ -35,6 +35,7 @@ const BANK_OBTAINABLE = new Set([
   "Proof of transaction authorisation",
   "Any communication with customer",
   "Menu or price list at time of transaction",
+  "KYC verification documents",
 ]);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -587,9 +588,22 @@ export default function CaseWorkspace() {
                 <Panel style={{ borderLeft: `4px solid ${riskColor}`, padding: "1.25rem" }}>
                   <div className="flex justify-between items-start flex-wrap gap-4 mb-3">
                     <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#F8FAFC", margin: 0 }}>Fraud Review</h3>
-                    <div style={{ backgroundColor: riskBg, border: `1px solid ${riskBorder}` }} className="flex items-center gap-2 px-3 py-1.5 rounded">
-                      <AlertTriangle style={{ width: 13, height: 13, color: riskColor }} />
-                      <span style={{ color: riskColor }} className="text-xs font-bold tracking-wide">FRAUD RISK: {riskLevel}</span>
+                    <div className="flex items-center gap-2">
+                      {caseData.requires_manual_review ? (
+                        <div style={{ backgroundColor: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)" }} className="flex items-center gap-1.5 px-3 py-1.5 rounded">
+                          <AlertTriangle style={{ width: 12, height: 12, color: "#FBBF24" }} />
+                          <span style={{ color: "#FBBF24" }} className="text-xs font-bold tracking-wide">HUMAN REVIEW REQUIRED</span>
+                        </div>
+                      ) : (
+                        <div style={{ backgroundColor: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.3)" }} className="flex items-center gap-1.5 px-3 py-1.5 rounded">
+                          <CheckCircle style={{ width: 12, height: 12, color: "#4ADE80" }} />
+                          <span style={{ color: "#4ADE80" }} className="text-xs font-bold tracking-wide">NO HUMAN REVIEW NEEDED</span>
+                        </div>
+                      )}
+                      <div style={{ backgroundColor: riskBg, border: `1px solid ${riskBorder}` }} className="flex items-center gap-2 px-3 py-1.5 rounded">
+                        <AlertTriangle style={{ width: 13, height: 13, color: riskColor }} />
+                        <span style={{ color: riskColor }} className="text-xs font-bold tracking-wide">FRAUD RISK: {riskLevel}</span>
+                      </div>
                     </div>
                   </div>
                   <p style={{ fontSize: "0.75rem", color: "#94A3B8", lineHeight: 1.6, margin: 0 }}>
@@ -789,9 +803,6 @@ export default function CaseWorkspace() {
                 {/* Investigation header */}
                 <Panel>
                   <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-                    <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "0.25rem 0.625rem", backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 3, color: "#94A3B8" }}>
-                      {plan.recommended_queue?.replace(/_/g, " ") ?? "—"}
-                    </span>
                     {plan.investigation_complexity && (
                       <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "0.25rem 0.625rem", border: "1px solid #334155", borderRadius: 3, backgroundColor: plan.investigation_complexity === "CRITICAL" ? "#FEF2F2" : plan.investigation_complexity === "HIGH" ? "#FFFBEB" : "#F0FDF4", color: plan.investigation_complexity === "CRITICAL" ? "#991B1B" : plan.investigation_complexity === "HIGH" ? "#92400E" : "#166534", borderColor: plan.investigation_complexity === "CRITICAL" ? "#FECACA" : plan.investigation_complexity === "HIGH" ? "#FDE68A" : "#BBF7D0" }}>
                         {plan.investigation_complexity} COMPLEXITY
@@ -903,7 +914,7 @@ export default function CaseWorkspace() {
                     <SectionTitle>Customer History</SectionTitle>
                     <InfoRow label="Prior Disputes"  value={plan.customer_risk_profile?.previous_disputes ?? "—"} />
                     <InfoRow label="Fraud Claims"    value={plan.customer_risk_profile?.fraud_claims ?? "—"} />
-                    <InfoRow label="Last Dispute"    value={plan.customer_risk_profile?.last_dispute_days_ago != null ? `${plan.customer_risk_profile.last_dispute_days_ago} days ago` : "—"} />
+                    <InfoRow label="Last Dispute"    value={plan.customer_risk_profile?.last_dispute_days_ago != null && plan.customer_risk_profile.last_dispute_days_ago >= 0 ? `${plan.customer_risk_profile.last_dispute_days_ago} days ago` : "Never"} />
                     <InfoRow label="Risk Level"      value={plan.customer_risk_profile?.risk_level ?? "—"} />
                     {plan.customer_risk_profile?.assessment && <div style={{ marginTop: "0.5rem", fontSize: "0.7rem", color: "#64748B", lineHeight: 1.5 }}>{plan.customer_risk_profile.assessment}</div>}
                   </Panel>
@@ -956,30 +967,6 @@ export default function CaseWorkspace() {
                   </Panel>
                 )}
 
-                {/* Data quality */}
-                {dqPct != null && (
-                  <Panel>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.625rem" }}>
-                      <SectionTitle>Data Quality Assessment</SectionTitle>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: dqPct >= 90 ? "#4ADE80" : dqPct >= 75 ? "#FCD34D" : "#FCA5A5", fontFamily: "ui-monospace, monospace" }}>
-                        {dqPct}% — {dqPct >= 90 ? "Excellent" : dqPct >= 75 ? "Good" : dqPct >= 60 ? "Moderate" : "Limited"}
-                      </span>
-                    </div>
-                    <div style={{ height: 4, backgroundColor: "#334155", borderRadius: 2, marginBottom: "0.75rem" }}>
-                      <div style={{ height: "100%", width: `${dqPct}%`, backgroundColor: dqPct >= 75 ? "#15803D" : dqPct >= 55 ? "#B45309" : "#B91C1C", borderRadius: 2 }} />
-                    </div>
-                    {(plan.data_quality_factors ?? []).length > 0 && (
-                      <ul style={{ display: "flex", flexDirection: "column", gap: "0.25rem", margin: 0, padding: 0, listStyle: "none" }}>
-                        {(plan.data_quality_factors ?? []).map((f: string, i: number) => (
-                          <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", fontSize: "0.7rem", color: "#64748B" }}>
-                            <span style={{ width: 3, height: 3, borderRadius: "50%", backgroundColor: "#64748B", flexShrink: 0, marginTop: 6 }} />
-                            {f}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </Panel>
-                )}
               </div>
             );
           })()}
@@ -1134,18 +1121,25 @@ export default function CaseWorkspace() {
                       {/* Evaluated files table */}
                       {evaluatedFiles.length > 0 && (
                         <div style={{ marginBottom: "0.75rem" }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 60px", gap: "0 0.5rem", borderBottom: "1px solid #1E293B", paddingBottom: "0.35rem", marginBottom: "0.35rem" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: "0 0.5rem", borderBottom: "1px solid #1E293B", paddingBottom: "0.35rem", marginBottom: "0.35rem" }}>
                             <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "#475569", textTransform: "uppercase" }}>File</span>
                             <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "#475569", textTransform: "uppercase" }}>Document Type</span>
-                            <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", textAlign: "right" }}>Confidence</span>
                           </div>
-                          {evaluatedFiles.map((f, i) => (
-                            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 140px 60px", gap: "0 0.5rem", padding: "0.3rem 0", borderBottom: "1px solid #0F172A" }}>
-                              <span style={{ fontSize: "0.7rem", color: "#CBD5E1", fontFamily: "ui-monospace, monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.filename}>{f.filename}</span>
-                              <span style={{ fontSize: "0.65rem", color: "#64748B" }}>{f.document_type.replace(/_/g, " ")}</span>
-                              <span style={{ fontSize: "0.7rem", color: f.confidence >= 0.80 ? "#4ADE80" : f.confidence >= 0.60 ? "#FCD34D" : "#FCA5A5", fontFamily: "ui-monospace, monospace", textAlign: "right", fontWeight: 700 }}>{Math.round(f.confidence * 100)}%</span>
-                            </div>
-                          ))}
+                          {evaluatedFiles.map((f, i) => {
+                            const rawName = f.filename ?? "";
+                            const baseName = rawName.replace(/\.[^.]+$/, "");
+                            const ext = rawName.includes(".") ? rawName.split(".").pop() : "";
+                            const isHash = /^[0-9a-f]{20,}$/i.test(baseName);
+                            const displayName = isHash
+                              ? `${baseName.slice(0, 8)}…${baseName.slice(-4)}.${ext}`
+                              : rawName;
+                            return (
+                              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: "0 0.5rem", padding: "0.3rem 0", borderBottom: "1px solid #0F172A" }}>
+                                <span style={{ fontSize: "0.7rem", color: "#CBD5E1", fontFamily: "ui-monospace, monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={rawName}>{displayName}</span>
+                                <span style={{ fontSize: "0.65rem", color: "#64748B" }}>{f.document_type.replace(/_/g, " ")}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                       {/* Source summary */}
@@ -1380,14 +1374,6 @@ export default function CaseWorkspace() {
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
 
                 {/* Fallback info — reworded as operational note, not technical error */}
-                {wfPlan.fallback_mode && (
-                  <div style={{ padding: "0.625rem 1rem", backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 4, display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
-                    <AlertTriangle style={{ width: 13, height: 13, color: "#94A3B8", flexShrink: 0, marginTop: 2 }} />
-                    <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>
-                      Case routing completed using standard assessment criteria.
-                    </span>
-                  </div>
-                )}
 
                 {/* ── Row 1: Four metric cards ── */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.5rem" }}>
@@ -1400,11 +1386,6 @@ export default function CaseWorkspace() {
                     {wfPlan.escalation_required
                       ? <div style={{ fontSize: "0.9rem", fontWeight: 700, color: escalColor ?? "#FCD34D" }}>{wfPlan.escalation_level} — Required</div>
                       : <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#4ADE80" }}>Not Required</div>}
-                  </Panel>
-                  <Panel>
-                    <Label>Estimated Effort</Label>
-                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "#F8FAFC" }}>{wfPlan.estimated_investigation_hours}h</div>
-                    <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>{wfPlan.analyst_level} Analyst</div>
                   </Panel>
                   <Panel>
                     <Label>Human Review</Label>
@@ -1747,14 +1728,6 @@ export default function CaseWorkspace() {
             })()}
           </Panel>
 
-          {/* Case Processing — agent execution summary */}
-          <Panel>
-            <SectionTitle>Case Processing</SectionTitle>
-            <InfoRow label="Analysis"      value={ariaVersion} />
-            <InfoRow label="Investigation" value={iiaVersion} />
-            <InfoRow label="Tools Used"    value={toolsUsed || "—"} />
-            {execTimeSec && <InfoRow label="Exec Time" value={`${execTimeSec}s`} />}
-          </Panel>
 
           {/* Duplicate warning */}
           {caseData.duplicate_of && (

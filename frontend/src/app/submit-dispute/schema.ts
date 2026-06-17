@@ -48,8 +48,8 @@ export const formSchema = z.object({
       "Transaction ID must be alphanumeric (e.g. TXN-00007525)"
     ),
 
-  // transaction_type, merchant, amount, transaction_date are auto-filled from DB via lookup.
-  // They remain required so the form blocks advancing if the transaction lookup has not succeeded.
+  // transaction_type, merchant, amount, transaction_date are filled manually by the customer.
+  // Transaction ID is used to verify the entered details match bank records.
   transaction_type: z.string().min(1, "Transaction type is required"),
 
   merchant: z.string().min(1, "Merchant / payee name is required"),

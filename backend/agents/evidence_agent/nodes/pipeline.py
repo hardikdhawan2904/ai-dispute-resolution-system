@@ -349,9 +349,13 @@ def finalize_node(state: EvidenceAgentState) -> dict:
         parsed["investigation_blocked"] or strength == "LOW"
     )
 
+    _customer_docs_missing = [
+        d for d in missing_docs
+        if d not in (parsed.get("bank_pending_documents") or [])
+    ]
     parsed["review_recommendation"] = (
         "Additional documentation required before investigation can proceed."
-        if parsed["investigation_blocked"]
+        if (parsed["investigation_blocked"] or (strength == "LOW" and len(_customer_docs_missing) > 0))
         else "Evidence is sufficient to continue the investigation."
     )
 

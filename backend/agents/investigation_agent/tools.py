@@ -323,22 +323,7 @@ def find_duplicate_transaction(
         related_ids: List[str] = []
         exclude_id = _active_case_id.get()
 
-        # Check 1 — exact transaction_id in transactions table
-        if transaction_id:
-            existing_txn = db.query(Transaction).filter(
-                Transaction.transaction_id == transaction_id
-            ).first()
-            if existing_txn:
-                # check if it was already disputed
-                if existing_txn.is_disputed:
-                    found.append(
-                        f"Transaction {transaction_id} — already marked as disputed in "
-                        f"transaction ledger (amount: ₹{existing_txn.amount:,.2f}, "
-                        f"merchant: {existing_txn.merchant_name})"
-                    )
-                    related_ids.append(transaction_id)
-
-        # Check 2 — exact transaction_id in dispute_cases (live disputes)
+        # Check 1 — exact transaction_id in dispute_cases OTHER than the current case
         if transaction_id:
             q = db.query(DisputeCase).filter(
                 DisputeCase.transaction_id == transaction_id

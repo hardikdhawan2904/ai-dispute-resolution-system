@@ -28,13 +28,14 @@ const STEPS = [
   {
     id: 2,
     label: "Transaction",
-    // transaction_type / merchant / amount / transaction_date are auto-filled from DB lookup;
-    // validating them here ensures the user cannot advance without a successful lookup.
+    // Customer fills these manually; TXN ID is used to verify they match bank records.
+    // txVerified state also gates advancement (see handleNext).
     fields: [
-      "transaction_id",
+      "transaction_type",
       "merchant",
       "amount",
       "transaction_date",
+      "transaction_id",
     ] as (keyof FormValues)[],
   },
   {
@@ -56,6 +57,7 @@ export default function SubmitDisputePage() {
   const [submitting,    setSubmitting]    = useState(false);
   const [apiError,      setApiError]      = useState("");
   const [filesError,    setFilesError]    = useState("");
+  const [txVerified,    setTxVerified]    = useState(false);
 
   useEffect(() => {
     document.title = "Submit Dispute | BFSI Dispute Resolution Platform";
@@ -109,6 +111,11 @@ export default function SubmitDisputePage() {
       (await form.trigger(stepData.fields));
 
     if (!valid) return;
+
+    // Step 2 — require transaction verification to pass before advancing
+    if (step === 2 && !txVerified) {
+      return;
+    }
 
     // Step 4 — require at least one image proof (JPG/PNG)
     if (step === 4) {
@@ -268,7 +275,7 @@ export default function SubmitDisputePage() {
 
             <div className="mt-6">
               {step === 1 && <Step1 form={form} />}
-              {step === 2 && <Step2 form={form} config={txConfig} />}
+              {step === 2 && <Step2 form={form} config={txConfig} onVerifiedChange={setTxVerified} />}
               {step === 3 && (
                 <Step3 form={form} reasons={txConfig?.disputeReasons ?? []} />
               )}

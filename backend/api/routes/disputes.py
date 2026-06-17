@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from typing import List, Optional
 from api.executor import analysis_executor
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import desc as _desc
 from sqlalchemy.orm import Session
 
@@ -39,16 +39,18 @@ async def submit_dispute_public(
     db: Session = Depends(get_db),
 ):
     """
-    Public dispute submission — accepts form data + optional evidence files in one request.
+    Public dispute submission — save-first, analyse-in-background.
 
-    Evidence text is extracted from files BEFORE the LLM is called so everything
-    (form fields + document content) goes to the model in a single call.
-    Broadcasts DISPUTE_QUEUED immediately, then ANALYSIS_COMPLETE after the pipeline finishes.
+    Phase 1 (instant, ~1s): validate → resolve DB values → save files → save
+    preliminary case record → return case_id to the user.
+
+    Phase 2 (background): run all AI agents → enrich with priority/queue/SLA →
+    update DB record → broadcast ANALYSIS_COMPLETE via WebSocket.
     """
     from utils.extractor import extract_text
     from database.models import BankCustomer, Transaction
-
     from pydantic import ValidationError
+
     try:
         data = DisputeSubmissionRequest.model_validate_json(payload).model_dump()
     except ValidationError as err:
@@ -58,59 +60,41 @@ async def submit_dispute_public(
             if "ctx" in e:
                 safe_e["ctx"] = {ck: str(cv) for ck, cv in e["ctx"].items()}
             safe_errors.append(safe_e)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=safe_errors,
-        )
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=safe_errors)
 
-    # Always resolve customer details from the DB — never trust form-submitted values.
+    # Always resolve customer + transaction details from DB — never trust form values.
     customer = db.query(BankCustomer).filter(
         BankCustomer.customer_id == data["customer_id"].upper()
     ).first()
     if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Customer '{data['customer_id']}' not found",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Customer '{data['customer_id']}' not found")
     data["customer_name"] = customer.full_name
-    data["email"] = customer.email
-    data["phone"] = customer.phone
+    data["email"]         = customer.email
+    data["phone"]         = customer.phone
 
-    # Always resolve transaction details from the DB — never trust form-submitted values.
     txn = db.query(Transaction).filter(
         Transaction.transaction_id == data["transaction_id"].upper()
     ).first()
     if not txn:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Transaction '{data['transaction_id']}' not found",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Transaction '{data['transaction_id']}' not found")
     if txn.customer_id.upper() != data["customer_id"].upper():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Transaction does not belong to this customer",
-        )
-    data["merchant"]          = txn.merchant_name
-    data["amount"]            = txn.amount
-    data["currency"]          = txn.currency
-    data["transaction_type"]  = txn.transaction_type
-    data["transaction_date"]  = txn.transaction_date.strftime("%Y-%m-%d") if txn.transaction_date else ""
-    data["transaction_time"]  = txn.transaction_date.strftime("%H:%M") if txn.transaction_date else ""
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Transaction does not belong to this customer")
+    data["merchant"]         = txn.merchant_name
+    data["amount"]           = txn.amount
+    data["currency"]         = txn.currency
+    data["transaction_type"] = txn.transaction_type
+    data["transaction_date"] = txn.transaction_date.strftime("%Y-%m-%d") if txn.transaction_date else ""
+    data["transaction_time"] = txn.transaction_date.strftime("%H:%M") if txn.transaction_date else ""
 
+    # ── Phase 1: Save files + preliminary case record ─────────────────────────
     case_id = generate_case_id(db)
+    data["_preset_case_id"] = case_id
+    data["case_id"]         = case_id
+    data["_document_count"] = len(files)
 
-    await ws_manager.broadcast({
-        "type":          "DISPUTE_QUEUED",
-        "case_id":       case_id,
-        "customer_id":   data.get("customer_id", ""),
-        "customer_name": data.get("customer_name", ""),
-        "merchant":      data.get("merchant", ""),
-        "amount":        data.get("amount", 0),
-        "currency":      data.get("currency", "INR"),
-        "timestamp":     utc_now_iso(),
-    })
-
-    # Extract text from evidence files before calling the LLM
     document_texts: List[str] = []
     if files:
         upload_dir = _UPLOAD_ROOT / case_id
@@ -129,42 +113,55 @@ async def submit_dispute_public(
             if text.strip():
                 document_texts.append(f"[{safe_name}]\n{text}")
 
-    data["_preset_case_id"]   = case_id
-    data["_document_count"]   = len(files)
-
-    def _run_sync():
-        from database.database import SessionLocal
-        db = SessionLocal()
-        try:
-            return DisputeService.submit_dispute(data, db, document_texts=document_texts)
-        finally:
-            db.close()
-
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(analysis_executor, _run_sync)
-
-    if not result["success"]:
-        await ws_manager.broadcast({
-            "type":    "ANALYSIS_FAILED",
-            "case_id": case_id,
-            "errors":  result["errors"],
-        })
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"message": "Dispute submission failed validation", "errors": result["errors"]},
-        )
+    # Save the preliminary case to DB immediately so it's visible in the queue
+    db_case = DisputeService._save_preliminary_case(data, db)
+    DisputeService._append_audit_log(
+        db=db, case_id=case_id,
+        event_type="CASE_RECEIVED", stage="intake",
+        message="Case received and saved. AI analysis pipeline starting in background.",
+        payload={"customer_id": data.get("customer_id"), "transaction_id": data.get("transaction_id")},
+    )
+    db.commit()
 
     await ws_manager.broadcast({
-        "type":    "ANALYSIS_COMPLETE",
-        "case_id": result["case_id"],
-        "case":    result["final_case"],
+        "type":          "DISPUTE_QUEUED",
+        "case_id":       case_id,
+        "customer_id":   data.get("customer_id", ""),
+        "customer_name": data.get("customer_name", ""),
+        "merchant":      data.get("merchant", ""),
+        "amount":        data.get("amount", 0),
+        "currency":      data.get("currency", "INR"),
+        "timestamp":     utc_now_iso(),
     })
 
-    api_logger.info(f"Dispute submitted: {result['case_id']}")
+    # ── Phase 2: Run agents in a dedicated daemon thread ─────────────────────
+    # BackgroundTasks shares FastAPI's thread pool — long-running agent pipelines
+    # starve other requests. A daemon thread is completely independent.
+    _loop = asyncio.get_event_loop()
+
+    def _background_pipeline():
+        result = DisputeService.run_pipeline(data, document_texts)
+        if result.get("success"):
+            asyncio.run_coroutine_threadsafe(ws_manager.broadcast({
+                "type":    "ANALYSIS_COMPLETE",
+                "case_id": case_id,
+                "case":    result.get("final_case"),
+            }), _loop)
+        else:
+            asyncio.run_coroutine_threadsafe(ws_manager.broadcast({
+                "type":    "ANALYSIS_FAILED",
+                "case_id": case_id,
+                "errors":  result.get("errors", []),
+            }), _loop)
+
+    t = threading.Thread(target=_background_pipeline, daemon=True)
+    t.start()
+
+    api_logger.info(f"Dispute queued for background analysis: {case_id}")
 
     return {
-        "success":  True,
-        "case_id":  result["case_id"],
+        "success": True,
+        "case_id": case_id,
         "message": (
             "Your dispute has been submitted successfully and is now under review. "
             "Our team will investigate and contact you within 5–7 business days."
@@ -180,9 +177,9 @@ def get_document_requirements(
 ):
     """Return the required documents list for a given dispute reason.
     Called by the frontend at Step 4 (document upload) to show the customer what to upload."""
-    from services.document_rules import get_required_documents, infer_category
+    from services.document_rules import get_customer_required_documents, infer_category
     category = infer_category(dispute_reason)
-    docs = get_required_documents(category, fraud_selected, amount)
+    docs = get_customer_required_documents(category, fraud_selected, amount)
     return {"category": category, "required_documents": docs}
 
 

@@ -103,7 +103,6 @@ _FRAUD_EXTRA: List[str] = [
 
 # Extra documents for high-value cases (> ₹50,000)
 _HIGH_VALUE_EXTRA: List[str] = [
-    "KYC verification documents",
     "Source of funds declaration",
 ]
 
@@ -122,6 +121,7 @@ _BANK_OBTAINABLE: set[str] = {
     "Proof of transaction authorisation",
     "Any communication with customer",
     "Menu or price list at time of transaction",
+    "KYC verification documents",  # bank already holds customer KYC on file
 }
 
 
