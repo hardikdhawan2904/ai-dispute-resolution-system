@@ -1090,11 +1090,20 @@ export default function CaseWorkspace() {
                       </div>
                     </div>
                   </div>
-                  {ea.review_recommendation && (
-                    <p style={{ fontSize: "0.75rem", color: strengthTextColor, marginTop: "0.75rem", fontWeight: 500, lineHeight: 1.5 }}>
-                      {ea.review_recommendation}
-                    </p>
-                  )}
+                  {(() => {
+                    const customerMissingCount = (ea.missing_documents ?? []).filter(
+                      (d: string) => !BANK_OBTAINABLE.has(d)
+                    ).length;
+                    const rec =
+                      ea.evidence_strength === "LOW" && customerMissingCount > 0
+                        ? "Additional documentation required before investigation can proceed."
+                        : ea.review_recommendation;
+                    return rec ? (
+                      <p style={{ fontSize: "0.75rem", color: strengthTextColor, marginTop: "0.75rem", fontWeight: 500, lineHeight: 1.5 }}>
+                        {rec}
+                      </p>
+                    ) : null;
+                  })()}
                 </Panel>
 
                 {/* ── Section 2b: Document Evidence Provenance ── */}
