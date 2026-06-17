@@ -1392,12 +1392,14 @@ export default function CaseWorkspace() {
             const _effectiveCompleted = _hasFraudData && !_completedAgents.includes("FRAUD_AGENT")
               ? ["FRAUD_AGENT", ..._completedAgents]
               : _completedAgents;
-            const effectiveWorkflowPath: string[] = wfPlan.workflow_path
-              ?? [
-                  ..._effectiveCompleted,
-                  ...(_nextAgent && !_effectiveCompleted.includes(_nextAgent) ? [_nextAgent] : []),
-                  ..._remainingAgents.filter((a: string) => a !== _nextAgent && !_effectiveCompleted.includes(a)),
-                ];
+            const _basePath: string[] = wfPlan.workflow_path ?? [
+              ..._effectiveCompleted,
+              ...(_nextAgent && !_effectiveCompleted.includes(_nextAgent) ? [_nextAgent] : []),
+              ..._remainingAgents.filter((a: string) => a !== _nextAgent && !_effectiveCompleted.includes(a)),
+            ];
+            // Append any required_agents not yet in the path — these are future steps shown in yellow
+            const _pendingFuture = (wfPlan.required_agents ?? []).filter((a: string) => !_basePath.includes(a));
+            const effectiveWorkflowPath: string[] = [..._basePath, ..._pendingFuture];
 
             // Fall back to effectiveWorkflowPath when required_agents wasn't set by WOA
             const _requiredAgents: string[] = (wfPlan.required_agents ?? []).length > 0
@@ -1531,17 +1533,18 @@ export default function CaseWorkspace() {
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
                         {effectiveWorkflowPath.map((agent: string, idx: number) => {
-                          const info   = reviewLabels[agent] ?? { label: agent, color: "#94A3B8", action: "" };
-                          const isDone = _effectiveCompleted.includes(agent);
-                          const isNow  = agent === _nextAgent;
+                          const info    = reviewLabels[agent] ?? { label: agent, color: "#94A3B8", action: "" };
+                          const isDone  = _effectiveCompleted.includes(agent);
+                          const isNow   = agent === _nextAgent;
+                          const isPending = !isDone && !isNow;
                           return (
-                            <div key={agent} style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.4rem 0.625rem", backgroundColor: isNow ? "#1E3A5F" : isDone ? "#0D2414" : "#0F172A", borderRadius: 3, border: `1px solid ${isNow ? "#2563EB" : isDone ? "#166534" : "#1E293B"}` }}>
-                              <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "#475569", width: 14, textAlign: "center", flexShrink: 0 }}>{idx + 1}</span>
-                              <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: isDone ? "#4ADE80" : isNow ? info.color : "#334155", flexShrink: 0 }} />
-                              <span style={{ fontSize: "0.72rem", color: isDone ? "#4ADE80" : isNow ? "#F8FAFC" : "#64748B", flex: 1, fontWeight: isNow ? 600 : 400 }}>{info.label}</span>
-                              {isDone && <CheckCircle style={{ width: 11, height: 11, color: "#4ADE80", flexShrink: 0 }} />}
-                              {isNow  && !isDone && <span style={{ fontSize: "0.58rem", color: "#60A5FA", fontWeight: 700, flexShrink: 0 }}>NOW</span>}
-                              {!isNow && !isDone && <span style={{ fontSize: "0.58rem", color: "#334155", flexShrink: 0 }}>PENDING</span>}
+                            <div key={agent} style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.4rem 0.625rem", backgroundColor: isNow ? "#1E3A5F" : isDone ? "#0D2414" : "#1A1500", borderRadius: 3, border: `1px solid ${isNow ? "#2563EB" : isDone ? "#166534" : "#3D2E00"}` }}>
+                              <span style={{ fontSize: "0.6rem", fontWeight: 700, color: isPending ? "#A16207" : "#475569", width: 14, textAlign: "center", flexShrink: 0 }}>{idx + 1}</span>
+                              <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: isDone ? "#4ADE80" : isNow ? info.color : "#A16207", flexShrink: 0 }} />
+                              <span style={{ fontSize: "0.72rem", color: isDone ? "#4ADE80" : isNow ? "#F8FAFC" : "#FCD34D", flex: 1, fontWeight: isNow ? 600 : isPending ? 500 : 400 }}>{info.label}</span>
+                              {isDone     && <CheckCircle style={{ width: 11, height: 11, color: "#4ADE80", flexShrink: 0 }} />}
+                              {isNow      && !isDone && <span style={{ fontSize: "0.58rem", color: "#60A5FA", fontWeight: 700, flexShrink: 0 }}>NOW</span>}
+                              {isPending  && <span style={{ fontSize: "0.58rem", color: "#EAB308", fontWeight: 600, flexShrink: 0 }}>PENDING</span>}
                             </div>
                           );
                         })}
