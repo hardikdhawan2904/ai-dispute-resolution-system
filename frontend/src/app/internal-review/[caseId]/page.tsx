@@ -166,7 +166,7 @@ export default function CaseWorkspace() {
   useEffect(() => {
     if (activeTab === "fraud_review" && caseData) {
       const path: string[] = (caseData.workflow_plan as any)?.workflow_path ?? [];
-      const hasFraudData = path.includes("FRAUD_AGENT") || caseData.fraud_probability != null || caseData.fraud_suspicion === true;
+      const hasFraudData = path.includes("FRAUD_AGENT") || caseData.fraud_suspicion === true;
       if (!hasFraudData) setActiveTab("analysis");
     }
   }, [caseData, activeTab]);
@@ -234,7 +234,6 @@ export default function CaseWorkspace() {
 
   // Show Fraud Review when WOA included FRAUD_AGENT, or when fraud data exists (e.g. reanalysis ran fraud agent outside WOA path)
   const showFraudTab = (wfPlan?.workflow_path ?? []).includes("FRAUD_AGENT")
-    || caseData.fraud_probability != null
     || caseData.fraud_suspicion === true;
 
   const tabs = [
@@ -1389,7 +1388,7 @@ export default function CaseWorkspace() {
             const _completedAgents: string[] = wfPlan.completed_agents ?? [];
             const _remainingAgents: string[] = wfPlan.remaining_agents ?? [];
             const _nextAgent: string | null   = wfPlan.next_agent ?? null;
-            const _hasFraudData = caseData.fraud_probability != null || caseData.fraud_suspicion;
+            const _hasFraudData = caseData.fraud_suspicion === true;
             const _effectiveCompleted = _hasFraudData && !_completedAgents.includes("FRAUD_AGENT")
               ? ["FRAUD_AGENT", ..._completedAgents]
               : _completedAgents;
