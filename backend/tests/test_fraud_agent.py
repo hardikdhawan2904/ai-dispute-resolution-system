@@ -77,7 +77,7 @@ class TestFraudReasoningAgent(unittest.TestCase):
             merchant_name="Coffee Shop",
             amount=150.0,
             transaction_type="UPI",
-            transaction_date=self.current_time - timedelta(hours=2),
+            transaction_date=self.current_time - timedelta(seconds=10),
             status="Success",
             location="Mumbai",
             device_id="DEV_OLD_999"
