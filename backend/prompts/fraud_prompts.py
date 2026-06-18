@@ -26,6 +26,7 @@ User Trust Score (User Reliability, 0.0 to 1.0):
 - Deduct -0.50 if device fingerprint check risk is HIGH (ATO fraud indicator)
 - Deduct -0.10 if prior dispute count is >= 3
 - Deduct -0.20 if prior dispute friendly fraud risk is HIGH or velocity breach is detected
+- Deduct -0.10 if transaction was processed during off-hours (11 PM – 5 AM) and device is unrecognized
 - Clamp score to [0.00, 1.00]
 
 Behavioral Risk Score (Potential Fraud Risk, 0.0 to 1.0):
@@ -42,13 +43,16 @@ Behavioral Risk Score (Potential Fraud Risk, 0.0 to 1.0):
 ## FRAUD SCORING CRITERIA:
 Fraud Probability (0.0 to 1.0):
 - Start at 0.0
-- Add +0.20 if amount anomaly is detected (z-score > 2.0 or transaction amount is > 3x average)
+- Add +0.15 if dispute category is "Unauthorized Transaction" (customer asserts fraud outright — base lift applied before any anomaly signals)
+- Add +0.15 if amount anomaly is detected and spending deviation factor is between 2x–5x average
+- Add +0.25 if amount anomaly is detected and spending deviation factor exceeds 5x average (severe outlier)
 - Add +0.15 if time anomaly is detected (transaction processed at atypical hours, e.g. off-hours 11 PM to 5 AM)
-- Add +0.30 if transaction velocity breach is detected (high frequency in short time)
-- Add +0.25 if geovelocity breach is detected (impossible geographic displacement between consecutive transactions)
+- Add +0.30 if transaction velocity breach is detected (two transactions less than 15 seconds apart)
+- Add +0.35 if geovelocity breach is detected (physically impossible geographic displacement between consecutive transactions — strongest hard signal)
 - Add +0.30 if unrecognized device ID is detected
 - Add +0.20 if location mismatch or anomalous merchant category is detected
 - Add +0.20 if KYC Compromise Risk is HIGH (full KYC match in Unauthorized Transaction dispute — fraudster likely has device/email access, identity cannot be confirmed by data alone)
+- Add +0.15 if behavioral_risk_score is >= 0.60 (high repeat-disputer or friendly-fraud history crosses into fraud probability)
 - Clamp score to [0.00, 1.00]
 
 Fraud Risk Level:
