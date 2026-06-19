@@ -362,3 +362,34 @@ export async function getQueueCases(queueName: string, skip = 0, limit = 50): Pr
   const res = await api.get(`/api/ops/queues/${queueName}/cases`, { params: { skip, limit } });
   return res.data;
 }
+
+// ── Communications (Agent 6 — CCA) ───────────────────────────────────────────
+
+export interface CommunicationLog {
+  id:                number;
+  case_id:           string;
+  notification_type: string;
+  recipient:         string;
+  subject:           string;
+  body:              string;
+  status:            "SENT" | "FAILED" | "PENDING";
+  sent_at:           string | null;
+  created_at:        string;
+}
+
+export async function getCommunications(caseId: string): Promise<{ case_id: string; total: number; communications: CommunicationLog[] }> {
+  const res = await api.get(`/api/communications/${caseId}`);
+  return res.data;
+}
+
+export async function sendCommunication(
+  caseId: string,
+  notificationType: string,
+  context?: Record<string, unknown>,
+): Promise<{ case_id: string; result: CommunicationLog }> {
+  const res = await api.post(`/api/communications/${caseId}/send`, {
+    notification_type: notificationType,
+    context: context ?? {},
+  });
+  return res.data;
+}

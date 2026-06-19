@@ -9,7 +9,8 @@ import {
   RefreshCw, X, ZoomIn, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { cn, formatCurrency, formatDate, getPriorityColor, getConfidenceLabel } from "@/lib/utils";
-import { getCase, getAuditLogs, getWorkflowStates, updateCaseStatus, reanalyseCase, getCaseUploads, createDocumentRequest } from "@/lib/api";
+import { getCase, getAuditLogs, getWorkflowStates, updateCaseStatus, reanalyseCase, getCaseUploads, createDocumentRequest, getCommunications, sendCommunication } from "@/lib/api";
+import type { CommunicationLog } from "@/lib/api";
 import type { CaseUploadFile } from "@/lib/api";
 import type { DisputeCase, AuditLog, WorkflowState, CaseStatus, EvidenceAssessment } from "@/types";
 import RiskTags from "@/components/dispute/RiskTags";
@@ -135,7 +136,9 @@ export default function CaseWorkspace() {
   const [elapsed, setElapsed]               = useState(0);
   const [uploads, setUploads]               = useState<CaseUploadFile[]>([]);
   const [lightbox, setLightbox]             = useState<string | null>(null);
-  const [activeTab, setActiveTab]           = useState<"analysis" | "fraud_review" | "investigation" | "evidence_review" | "evidence" | "audit" | "orchestration" | "advanced">("analysis");
+  const [activeTab, setActiveTab]           = useState<"analysis" | "fraud_review" | "investigation" | "evidence_review" | "evidence" | "audit" | "orchestration" | "advanced" | "communications">("analysis");
+  const [communications, setCommunications] = useState<CommunicationLog[]>([]);
+  const [expandedComm, setExpandedComm]     = useState<number | null>(null);
   const [showAdvanced, setShowAdvanced]     = useState(false);
   const [whyPlanOpen, setWhyPlanOpen]       = useState(false);
   const [liveUpdate, setLiveUpdate]         = useState(false);
@@ -146,8 +149,8 @@ export default function CaseWorkspace() {
   useEffect(() => {
     if (!caseId) return;
     setLoading(true);
-    Promise.all([getCase(caseId), getAuditLogs(caseId), getWorkflowStates(caseId), getCaseUploads(caseId)])
-      .then(([c, a, w, up]) => { setCaseData(c); setAuditLogs(a.audit_logs); setWorkflowStates(w.workflow_states); setUploads(up); })
+    Promise.all([getCase(caseId), getAuditLogs(caseId), getWorkflowStates(caseId), getCaseUploads(caseId), getCommunications(caseId).catch(() => ({ communications: [] }))])
+      .then(([c, a, w, up, comms]) => { setCaseData(c); setAuditLogs(a.audit_logs); setWorkflowStates(w.workflow_states); setUploads(up); setCommunications(comms.communications || []); })
       .catch(() => { toast.error("Case not found"); router.push("/internal-review"); })
       .finally(() => setLoading(false));
   }, [caseId, router]);
@@ -243,8 +246,9 @@ export default function CaseWorkspace() {
     { key: "evidence_review", label: "Evidence Review" },
     { key: "orchestration",   label: "Case Coordination" },
     { key: "evidence",        label: `Evidence (${uploads.length})` },
-    { key: "audit",          label: "Audit Trail" },
-    { key: "advanced",       label: "Advanced Diagnostics" },
+    { key: "audit",           label: "Audit Trail" },
+    { key: "communications",  label: `Communications (${communications.length})` },
+    { key: "advanced",        label: "Advanced Diagnostics" },
   ] as const;
 
   return (
@@ -1651,6 +1655,77 @@ export default function CaseWorkspace() {
                 </div>
               )}
             </Panel>
+          )}
+
+          {/* ── Communications tab ────────────────────────────────────────── */}
+          {activeTab === "communications" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#F8FAFC" }}>Customer Communications</div>
+                  <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>All notifications sent to the customer for this case.</div>
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      await sendCommunication(caseId!, "CASE_RECEIVED");
+                      const res = await getCommunications(caseId!);
+                      setCommunications(res.communications || []);
+                      toast.success("Communication sent");
+                    } catch { toast.error("Failed to send communication"); }
+                  }}
+                  style={{ fontSize: "0.7rem", padding: "0.35rem 0.75rem", backgroundColor: "#1E3A5F", color: "#93C5FD", border: "1px solid #2563EB", borderRadius: 4, cursor: "pointer" }}
+                >
+                  + Send Update
+                </button>
+              </div>
+
+              {communications.length === 0 ? (
+                <Panel style={{ textAlign: "center", padding: "2rem" }}>
+                  <div style={{ fontSize: "0.8rem", color: "#64748B" }}>No communications sent yet.</div>
+                </Panel>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {communications.map((comm) => (
+                    <Panel key={comm.id} style={{ padding: "0.75rem 1rem", cursor: "pointer" }} onClick={() => setExpandedComm(expandedComm === comm.id ? null : comm.id)}>
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: 3 }}>
+                            <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "1px 6px", borderRadius: 3, backgroundColor: "#0F172A", color: "#94A3B8", border: "1px solid #334155", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
+                              {comm.notification_type.replace(/_/g, " ")}
+                            </span>
+                            <span style={{
+                              fontSize: "0.6rem", fontWeight: 600, padding: "1px 6px", borderRadius: 3,
+                              backgroundColor: comm.status === "SENT" ? "#14532D" : comm.status === "FAILED" ? "#450A0A" : "#1C1209",
+                              color:           comm.status === "SENT" ? "#4ADE80" : comm.status === "FAILED" ? "#FCA5A5" : "#FCD34D",
+                              border: `1px solid ${comm.status === "SENT" ? "#166534" : comm.status === "FAILED" ? "#7F1D1D" : "#3D2E00"}`,
+                            }}>
+                              {comm.status}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "#F8FAFC", marginBottom: 2 }}>{comm.subject}</div>
+                          <div style={{ fontSize: "0.68rem", color: "#64748B" }}>
+                            To: {comm.recipient} &nbsp;·&nbsp; {comm.sent_at ? new Date(comm.sent_at).toLocaleString() : comm.created_at ? new Date(comm.created_at).toLocaleString() : "—"}
+                          </div>
+                          {expandedComm !== comm.id && (
+                            <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "600px" }}>
+                              {comm.body.replace(/<[^>]+>/g, " ").substring(0, 120)}…
+                            </div>
+                          )}
+                        </div>
+                        <span style={{ fontSize: "0.65rem", color: "#475569", flexShrink: 0 }}>{expandedComm === comm.id ? "▲" : "▼"}</span>
+                      </div>
+                      {expandedComm === comm.id && (
+                        <div
+                          style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid #334155", fontSize: "0.75rem" }}
+                          dangerouslySetInnerHTML={{ __html: comm.body }}
+                        />
+                      )}
+                    </Panel>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {/* ── Advanced Diagnostics tab ──────────────────────────────────── */}

@@ -102,6 +102,25 @@ def _apply_column_migrations() -> None:
             conn.commit()
             db_logger.info("Migration applied: dispute_cases.evidence_assessment column added.")
 
+        # Communication logs table
+        if "communication_logs" not in inspector.get_table_names():
+            conn.execute(text("""
+                CREATE TABLE communication_logs (
+                    id SERIAL PRIMARY KEY,
+                    case_id VARCHAR(64) NOT NULL REFERENCES dispute_cases(case_id) ON DELETE CASCADE,
+                    notification_type VARCHAR(64) NOT NULL,
+                    recipient VARCHAR(256) NOT NULL,
+                    subject VARCHAR(512) NOT NULL,
+                    body TEXT NOT NULL,
+                    status VARCHAR(32) DEFAULT 'SENT',
+                    sent_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_communication_logs_case_id ON communication_logs (case_id)"))
+            conn.commit()
+            db_logger.info("Migration applied: communication_logs table created.")
+
         # Performance indexes for list/filter queries
         existing_indexes = {idx["name"] for idx in inspector.get_indexes("dispute_cases")}
         index_defs = [

@@ -27,6 +27,7 @@ from services.queue_assignment_service import assign_queue
 from services.duplicate_detection_service import find_duplicate
 from services.manual_review_service import should_flag_manual_review
 from services.data_sync_service import sync_on_submission, sync_on_resolution
+from services.communication_service import trigger_communication_async
 
 
 class DisputeService:
@@ -63,6 +64,11 @@ class DisputeService:
             payload={"customer_id": dispute_input.get("customer_id"), "transaction_id": dispute_input.get("transaction_id")},
         )
         db.commit()
+        # CCA — notify customer that dispute was received
+        try:
+            trigger_communication_async(db_case.case_id, "CASE_RECEIVED")
+        except Exception:
+            pass
 
         # ── Step 2: Run LangGraph workflow (agents save intermediate results) ──
         workflow_result = run_dispute_workflow(
@@ -417,6 +423,24 @@ class DisputeService:
         sync_on_resolution(case, db)
         db.commit()
         db.refresh(case)
+
+        # CCA — notify customer of status change
+        try:
+            _STATUS_COMM_MAP = {
+                "Under Investigation": "INVESTIGATION_STARTED",
+                "Pending Documents":   "DOCUMENT_REQUESTED",
+                "Resolved":            "CASE_RESOLVED",
+                "Rejected":            "CASE_RESOLVED",
+                "Closed":              "CASE_RESOLVED",
+            }
+            comm_type = _STATUS_COMM_MAP.get(new_status, "STATUS_CHANGED")
+            context = {"new_status": new_status, "resolution_status": new_status}
+            if note:
+                context["resolution_summary"] = note
+            trigger_communication_async(case_id, comm_type, context=context)
+        except Exception:
+            pass
+
         return case.to_dict()
 
     # ── Private helpers ────────────────────────────────────────────────────────

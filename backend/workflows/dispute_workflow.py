@@ -498,6 +498,13 @@ def fraud_reasoning_node(state: DisputeWorkflowState) -> dict:
                 "identity_verification": fraud_output.get("identity_verification"),
             },
         )
+        # CCA — notify customer that additional verification is in progress
+        try:
+            from services.communication_service import trigger_communication_async
+            trigger_communication_async(state.get("case_id", ""), "FRAUD_REVIEW_STARTED")
+        except Exception:
+            pass
+
         return {
             "fraud_output":         fraud_output,
             "trust_output":         fraud_output,
@@ -669,6 +676,13 @@ def investigation_node(state: DisputeWorkflowState) -> dict:
                 "duplicate_found":          investigation_plan.get("duplicate_found"),
             },
         )
+        # CCA — notify customer that investigation has started
+        try:
+            from services.communication_service import trigger_communication_async
+            trigger_communication_async(state.get("case_id", ""), "INVESTIGATION_STARTED")
+        except Exception:
+            pass
+
         return {
             "investigation_output": investigation_plan,
             "current_stage": node,
@@ -762,6 +776,13 @@ def evidence_node(state: DisputeWorkflowState) -> dict:
                 "missing_docs":          len(evidence_assessment.get("missing_documents", [])),
             },
         )
+        # CCA — notify customer that document review is complete
+        try:
+            from services.communication_service import trigger_communication_async
+            trigger_communication_async(state.get("case_id", ""), "EVIDENCE_REVIEW_COMPLETED")
+        except Exception:
+            pass
+
         return {
             "evidence_output":      evidence_assessment,
             "orchestration_output": updated_wf_plan,

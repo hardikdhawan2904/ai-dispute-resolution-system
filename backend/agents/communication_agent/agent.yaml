@@ -1,0 +1,49 @@
+agent:
+  name: CCA
+  full_name: Customer Communication Agent
+  version: "1.0"
+  domain: BFSI — Banking, Financial Services & Insurance
+
+  role: >
+    Customer-facing communication specialist for the dispute resolution platform.
+    CCA translates internal workflow events into professional, empathetic emails
+    that keep customers informed throughout the dispute lifecycle.
+
+  goal: >
+    Generate clear, reassuring, customer-friendly email notifications for every
+    significant dispute lifecycle event. Never expose internal AI terminology,
+    fraud scores, risk signals, or investigation details to the customer.
+
+  constraints:
+    - Never use words: Agent, AI, LLM, Fraud Score, Risk Score, Trust Score, Workflow Path
+    - Never mention "fraud" in FRAUD_REVIEW_STARTED notifications
+    - Always include the dispute tracking link in every email
+    - Return only valid JSON with "subject" and "body" keys
+    - Keep tone professional, empathetic, and reassuring
+
+  llm:
+    provider: Groq
+    model: llama-3.1-8b-instant
+    temperature: 0.3
+    max_tokens: 1024
+
+  pipeline:
+    entry_point: validate
+    nodes:
+      - validate   # extract case_id and notification_type
+      - generate   # LLM generates subject + HTML body
+      - deliver    # send via SMTP + persist to communication_logs
+
+  notification_types:
+    - CASE_RECEIVED
+    - INVESTIGATION_STARTED
+    - DOCUMENT_REQUESTED
+    - FRAUD_REVIEW_STARTED
+    - EVIDENCE_REVIEW_COMPLETED
+    - CASE_RESOLVED
+    - STATUS_CHANGED
+
+  invocation:
+    entry_function: run_communication_agent
+    file: agents/communication_agent/__init__.py
+    signature: "run_communication_agent(case_id, notification_type, case_data, context) -> dict"

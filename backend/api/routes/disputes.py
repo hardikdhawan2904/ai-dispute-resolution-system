@@ -183,6 +183,126 @@ def get_document_requirements(
     return {"category": category, "required_documents": docs}
 
 
+@router.get("/track/{case_id}")
+def track_dispute(case_id: str, db: Session = Depends(get_db)):
+    """
+    Public customer-facing tracking endpoint.
+    Returns only safe, customer-visible fields — NO fraud scores, trust scores,
+    agent names, workflow paths, analyst assignments, or internal notes.
+    """
+    from database.models import DisputeCase, AuditLog, DocumentRequest
+    from services.document_rules import get_customer_required_documents
+
+    case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    c = case.to_dict()
+
+    # ── Timeline: audit logs visible to customers ─────────────────────────────
+    _VISIBLE_EVENTS = {
+        "CASE_RECEIVED":             "Your dispute has been received and registered.",
+        "INVESTIGATION_STARTED":     "Your case is now under review.",
+        "DOCUMENT_UPLOADED":         "Documents received and attached to your case.",
+        "DOCUMENT_REQUESTED":        "Additional documents have been requested.",
+        "REANALYSED_AFTER_UPLOAD":   "Your case has been updated after document review.",
+        "STATUS_CHANGED":            None,  # use log message if set
+        "CASE_RESOLVED":             "Your dispute has been resolved.",
+        "CASE_REJECTED":             "Your dispute has been reviewed and closed.",
+    }
+    raw_logs = (
+        db.query(AuditLog)
+        .filter(AuditLog.case_id == case_id.upper())
+        .order_by(AuditLog.created_at)
+        .all()
+    )
+    timeline = []
+    for log in raw_logs:
+        if log.event_type not in _VISIBLE_EVENTS:
+            continue
+        desc = _VISIBLE_EVENTS[log.event_type] or log.message or log.event_type
+        timeline.append({
+            "description": desc,
+            "timestamp":   log.created_at.isoformat() if log.created_at else None,
+        })
+
+    # ── Document tracking ────────────────────────────────────────────────────
+    required_docs: list[str] = []
+    pending_docs:  list[str] = []
+    received_count = 0
+    doc_requested  = bool(c.get("document_requested"))
+
+    if doc_requested:
+        try:
+            category = c.get("dispute_category", "") or ""
+            fraud_sel = bool(c.get("fraud_selected", False))
+            amount    = float(c.get("amount", 0) or 0)
+            required_docs = get_customer_required_documents(category, fraud_sel, amount)
+        except Exception:
+            pass
+
+        # Check DB document requests for pending vs fulfilled
+        try:
+            db_reqs = (
+                db.query(DocumentRequest)
+                .filter(DocumentRequest.case_id == case_id.upper())
+                .all()
+            )
+            if db_reqs:
+                required_docs = [r.document_type for r in db_reqs]
+                pending_docs  = [r.document_type for r in db_reqs if not r.fulfilled_at]
+                received_count = sum(1 for r in db_reqs if r.fulfilled_at)
+            else:
+                # Fall back: check uploads folder for received count
+                upload_dir = _UPLOAD_ROOT / case_id.upper()
+                if upload_dir.exists():
+                    received_count = sum(1 for f in upload_dir.iterdir() if f.is_file())
+                pending_docs = [d for d in required_docs]
+                if received_count:
+                    pending_docs = required_docs[received_count:] if received_count < len(required_docs) else []
+        except Exception:
+            pending_docs = required_docs
+
+    # ── Estimated resolution ──────────────────────────────────────────────────
+    from datetime import datetime, timedelta
+    PRIORITY_DAYS = {"CRITICAL": 2, "HIGH": 3, "MEDIUM": 5, "LOW": 7}
+    priority = c.get("priority", "MEDIUM") or "MEDIUM"
+    sla = c.get("sla_deadline")
+    if sla and isinstance(sla, str):
+        try:
+            sla_dt  = datetime.fromisoformat(sla.replace("Z", "+00:00"))
+            est_res = sla_dt.strftime("%d %b %Y")
+        except Exception:
+            est_res = "5–7 business days"
+    elif sla and hasattr(sla, "strftime"):
+        est_res = sla.strftime("%d %b %Y")
+    else:
+        days    = PRIORITY_DAYS.get(priority, 5)
+        est_res = f"{days}–{days + 2} business days"
+
+    status = c.get("status", "Dispute Received")
+    if status in ("Resolved", "Rejected", "Closed"):
+        est_res = "Case closed"
+
+    return {
+        "case_id":            case_id.upper(),
+        "status":             status,
+        "dispute_reason":     c.get("dispute_reason"),
+        "merchant":           c.get("merchant", ""),
+        "amount":             c.get("amount", 0.0),
+        "currency":           c.get("currency", "INR"),
+        "transaction_type":   c.get("transaction_type", ""),
+        "submission_date":    c.get("created_at", ""),
+        "last_updated":       c.get("updated_at"),
+        "estimated_resolution": est_res,
+        "document_requested": doc_requested,
+        "required_documents": required_docs,
+        "pending_documents":  pending_docs,
+        "documents_received": received_count,
+        "timeline":           timeline,
+    }
+
+
 @router.get("/cases", response_model=CasesListResponse)
 def list_cases(
     skip: int = Query(default=0, ge=0),
