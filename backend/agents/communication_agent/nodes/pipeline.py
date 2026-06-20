@@ -17,7 +17,7 @@ from langchain_groq import ChatGroq
 
 from agents.communication_agent.config import get_llm_config
 from agents.communication_agent.state import CommunicationAgentState
-from prompts.communication_prompts import SYSTEM_PROMPT, build_generation_prompt, NOTIFICATION_TEMPLATES
+from prompts.communication_prompts import SYSTEM_PROMPT, build_generation_prompt, build_html_email, NOTIFICATION_TEMPLATES
 from services.email_service import send_email
 from utils.helpers import extract_json_from_text
 from utils.logger import agent_logger
@@ -53,56 +53,22 @@ def generate_node(state: CommunicationAgentState) -> dict:
     if state.get("status") == "FAILED":
         return {}
 
-    cfg = get_llm_config()
-    llm = ChatGroq(
-        model=cfg.get("model", "llama-3.1-8b-instant"),
-        temperature=cfg.get("temperature", 0.3),
-        max_tokens=cfg.get("max_tokens", 1024),
-    )
-
-    prompt = build_generation_prompt(
-        notification_type = state["notification_type"],
-        case_data         = state.get("case_data") or {},
-        context           = state.get("context") or {},
-    )
-
     try:
-        messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)]
-        response = llm.invoke(messages)
-        raw      = response.content if hasattr(response, "content") else str(response)
-
-        parsed = extract_json_from_text(raw)
-        if not parsed or "subject" not in parsed or "body" not in parsed:
-            # Fallback: build a plain-text email
-            case_id  = state.get("case_id", "N/A")
-            n_type   = state.get("notification_type", "")
-            tracking = f"http://localhost:3000/track/{case_id}"
-            subject  = NOTIFICATION_TEMPLATES.get(n_type, {}).get("subject_template", "Dispute Update – {case_id}").format(case_id=case_id)
-            body     = (
-                f"<p>Dear Customer,</p>"
-                f"<p>We are writing to update you regarding your dispute case <strong>{case_id}</strong>.</p>"
-                f"<p>Please track your dispute here: <a href='{tracking}'>{tracking}</a></p>"
-                f"<p>Thank you for banking with SecureBank.</p>"
-            )
-            return {"subject": subject, "body": body}
-
-        return {
-            "subject": parsed["subject"],
-            "body":    parsed["body"],
-        }
+        subject, body = build_html_email(
+            notification_type = state.get("notification_type", "STATUS_CHANGED"),
+            case_data         = state.get("case_data") or {},
+            context           = state.get("context") or {},
+        )
+        return {"subject": subject, "body": body}
 
     except Exception as exc:
         agent_logger.error(f"CCA generate_node failed: {exc}", exc_info=True)
-        case_id  = state.get("case_id", "N/A")
-        tracking = f"http://localhost:3000/track/{case_id}"
-        subject  = f"Dispute Update – {case_id}"
-        body     = (
-            f"<p>Dear Customer,</p>"
-            f"<p>There is an update on your dispute case <strong>{case_id}</strong>. "
-            f"Please track your case at: <a href='{tracking}'>{tracking}</a></p>"
-            f"<p>Thank you for your patience.</p>"
-        )
-        return {"subject": subject, "body": body, "error": str(exc)}
+        case_id = state.get("case_id", "N/A")
+        return {
+            "subject": f"Dispute Update – {case_id}",
+            "body":    f"<p>Dear Customer,</p><p>There is an update on your dispute case <strong>{case_id}</strong>.</p>",
+            "error":   str(exc),
+        }
 
 
 def deliver_node(state: CommunicationAgentState) -> dict:
