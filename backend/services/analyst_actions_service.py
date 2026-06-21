@@ -68,6 +68,26 @@ def perform_action(
 
     db.commit()
     db.refresh(case)
+
+    # Trigger CCA communication for status update
+    if action in _ACTION_STATUS_MAP or action == "under_investigation":
+        try:
+            from services.communication_service import trigger_communication_async
+            _STATUS_COMM_MAP = {
+                "Under Investigation": "INVESTIGATION_STARTED",
+                "Pending Documents":   "DOCUMENT_REQUESTED",
+                "Resolved":            "CASE_RESOLVED",
+                "Rejected":            "CASE_RESOLVED",
+                "Closed":              "CASE_RESOLVED",
+            }
+            comm_type = _STATUS_COMM_MAP.get(case.status, "STATUS_CHANGED")
+            context = {"new_status": case.status, "resolution_status": case.status}
+            if note:
+                context["resolution_summary"] = note
+            trigger_communication_async(case_id, comm_type, context=context)
+        except Exception:
+            pass
+
     return case.to_dict()
 
 

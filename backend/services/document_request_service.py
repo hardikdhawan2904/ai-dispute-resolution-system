@@ -55,6 +55,14 @@ def create_request(
 
     db.commit()
     db.refresh(dr)
+
+    # Trigger CCA communication for DOCUMENT_REQUESTED
+    try:
+        from services.communication_service import trigger_communication_async
+        trigger_communication_async(case_id, "DOCUMENT_REQUESTED", context={"requested_documents": [document_type]})
+    except Exception:
+        pass
+
     return dr.to_dict()
 
 
