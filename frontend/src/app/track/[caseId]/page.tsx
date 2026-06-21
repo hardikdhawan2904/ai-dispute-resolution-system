@@ -163,7 +163,17 @@ export default function TrackDisputePage() {
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: "0.65rem", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Est. Resolution</div>
-              <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#CBD5E1" }}>{data.estimated_resolution}</div>
+              <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#CBD5E1" }}>
+                {(() => {
+                  const est = data.estimated_resolution;
+                  // If it looks like a date (e.g. "12 Jun 2026"), check if it's past
+                  const d = new Date(est);
+                  if (!isNaN(d.getTime()) && d < new Date() && !["Resolved","Closed","Rejected","Case closed"].includes(est)) {
+                    return "Under active review";
+                  }
+                  return est;
+                })()}
+              </div>
             </div>
           </div>
         </div>
@@ -188,38 +198,46 @@ export default function TrackDisputePage() {
           </div>
         </div>
 
-        {/* Timeline */}
-        {data.timeline.length > 0 && (
-          <div style={{ backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 8, padding: "1.25rem 1.5rem", marginBottom: "1rem" }}>
-            <div style={{ fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748B", marginBottom: "0.875rem" }}>Case Timeline</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
-              {data.timeline.map((event, i) => (
-                <div key={i} style={{ display: "flex", gap: "0.875rem", position: "relative" }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#2563EB", border: "2px solid #1E40AF", flexShrink: 0, marginTop: 2 }} />
-                    {i < data.timeline.length - 1 && <div style={{ width: 1, backgroundColor: "#334155", flex: 1, minHeight: 20, marginTop: 2 }} />}
+        {/* Timeline — deduplicated by description */}
+        {data.timeline.length > 0 && (() => {
+          const seen = new Set<string>();
+          const dedupedTimeline = data.timeline.filter(e => {
+            const key = e.description.trim().toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          return (
+            <div style={{ backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 8, padding: "1.25rem 1.5rem", marginBottom: "1rem" }}>
+              <div style={{ fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748B", marginBottom: "0.875rem" }}>Case Timeline</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+                {dedupedTimeline.map((event, i) => (
+                  <div key={i} style={{ display: "flex", gap: "0.875rem", position: "relative" }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#2563EB", border: "2px solid #1E40AF", flexShrink: 0, marginTop: 2 }} />
+                      {i < dedupedTimeline.length - 1 && <div style={{ width: 1, backgroundColor: "#334155", flex: 1, minHeight: 20, marginTop: 2 }} />}
+                    </div>
+                    <div style={{ paddingBottom: i < dedupedTimeline.length - 1 ? "0.875rem" : 0 }}>
+                      <div style={{ fontSize: "0.78rem", color: "#CBD5E1", fontWeight: 500 }}>{event.description}</div>
+                      {event.timestamp && <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>{formatDate(event.timestamp)}</div>}
+                    </div>
                   </div>
-                  <div style={{ paddingBottom: i < data.timeline.length - 1 ? "0.875rem" : 0 }}>
-                    <div style={{ fontSize: "0.78rem", color: "#CBD5E1", fontWeight: 500 }}>{event.description}</div>
-                    {event.timestamp && <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>{formatDate(event.timestamp)}</div>}
+                ))}
+                {!["Resolved", "Rejected", "Closed"].includes(data.status) && (
+                  <div style={{ display: "flex", gap: "0.875rem" }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#D97706", border: "2px solid #92400E", flexShrink: 0, marginTop: 2 }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.78rem", color: "#FCD34D", fontWeight: 500 }}>⏳ Resolution Pending</div>
+                      <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>Your case is actively being reviewed</div>
+                    </div>
                   </div>
-                </div>
-              ))}
-              {/* Current status placeholder */}
-              {!["Resolved", "Rejected", "Closed"].includes(data.status) && (
-                <div style={{ display: "flex", gap: "0.875rem" }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#D97706", border: "2px solid #92400E", flexShrink: 0, marginTop: 2 }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "0.78rem", color: "#FCD34D", fontWeight: 500 }}>⏳ Resolution Pending</div>
-                    <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>Your case is actively being reviewed</div>
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Documents Required + Upload */}
         {data.document_requested && data.document_requests && data.document_requests.length > 0 && (
