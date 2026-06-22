@@ -1705,7 +1705,7 @@ export default function CaseWorkspace() {
                           <span style={{ fontSize: "0.72rem", fontWeight: 600, color: "#F8FAFC" }}>{comm.subject}</span>
                         </div>
                         <div style={{ fontSize: "0.62rem", color: "#475569", whiteSpace: "nowrap", flexShrink: 0 }}>
-                          To: {comm.recipient} &nbsp;·&nbsp; {comm.sent_at ? new Date(comm.sent_at).toLocaleString() : comm.created_at ? new Date(comm.created_at).toLocaleString() : "—"}
+                          To: {comm.recipient} &nbsp;·&nbsp; {formatDate(comm.sent_at || comm.created_at || "")}
                         </div>
                       </div>
                       {/* Email body — rendered in sandboxed iframe for proper HTML isolation */}
