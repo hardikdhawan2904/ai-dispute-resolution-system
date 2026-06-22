@@ -39,15 +39,6 @@ interface TrackingData {
   timeline: TimelineEvent[];
 }
 
-interface CommLog {
-  id: number;
-  subject: string;
-  body: string;
-  status: string;
-  sent_at: string | null;
-  created_at: string;
-  notification_type: string;
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -93,8 +84,6 @@ export default function TrackDisputePage() {
   const { caseId } = useParams<{ caseId: string }>();
 
   const [data, setData]               = useState<TrackingData | null>(null);
-  const [comms, setComms]             = useState<CommLog[]>([]);
-  const [expandedComm, setExpandedComm] = useState<number | null>(null);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
   const [uploading, setUploading]     = useState(false);
@@ -103,19 +92,9 @@ export default function TrackDisputePage() {
 
   const fetchData = () => {
     if (!caseId) return;
-    Promise.all([
-      fetch(`${API_BASE}/api/disputes/track/${caseId}`).then(r => {
-        if (!r.ok) throw new Error("Case not found");
-        return r.json();
-      }),
-      fetch(`${API_BASE}/api/communications/${caseId}`)
-        .then(r => r.ok ? r.json() : { communications: [] })
-        .catch(() => ({ communications: [] })),
-    ])
-      .then(([tracking, commData]) => {
-        setData(tracking);
-        setComms((commData.communications || []).filter((c: CommLog) => c.status === "SENT"));
-      })
+    fetch(`${API_BASE}/api/disputes/track/${caseId}`)
+      .then(r => { if (!r.ok) throw new Error("Case not found"); return r.json(); })
+      .then(tracking => setData(tracking))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -174,13 +153,6 @@ export default function TrackDisputePage() {
     if (seen.has(key)) return false;
     seen.add(key); return true;
   });
-
-  // Merge comms into timeline for communication history
-  const commTimeline = comms.map(c => ({
-    subject: c.subject,
-    timestamp: c.sent_at || c.created_at,
-    type: c.notification_type,
-  }));
 
   // Est. resolution — don't show past dates
   const resolvedEst = (() => {
@@ -410,44 +382,6 @@ export default function TrackDisputePage() {
           </div>
         )}
 
-        {/* ── 3b. MESSAGES FROM SECUREBANK ─────────────────────────────────── */}
-        {comms.length > 0 && (
-          <div style={{ backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "1.25rem 1.5rem", marginBottom: "1rem" }}>
-            <div style={{ fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748B", marginBottom: "0.875rem" }}>
-              Messages from SecureBank
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {comms.map(comm => (
-                <div key={comm.id} style={{ border: "1px solid #334155", borderRadius: 6, overflow: "hidden" }}>
-                  <button
-                    onClick={() => setExpandedComm(expandedComm === comm.id ? null : comm.id)}
-                    style={{
-                      width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                      padding: "0.75rem 0.875rem", backgroundColor: "#0F172A",
-                      border: "none", cursor: "pointer", textAlign: "left",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "#F8FAFC" }}>{comm.subject}</div>
-                      <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>
-                        {formatDate(comm.sent_at || comm.created_at)}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: "0.65rem", color: "#475569", flexShrink: 0, marginLeft: "0.5rem" }}>
-                      {expandedComm === comm.id ? "▲" : "▼"}
-                    </span>
-                  </button>
-                  {expandedComm === comm.id && (
-                    <div
-                      style={{ padding: "1rem 0.875rem", backgroundColor: "#1E293B", borderTop: "1px solid #334155", fontSize: "0.8rem" }}
-                      dangerouslySetInnerHTML={{ __html: comm.body }}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Footer */}
         <div style={{ textAlign: "center", marginTop: "2rem", fontSize: "0.62rem", color: "#334155" }}>
