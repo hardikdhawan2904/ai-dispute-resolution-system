@@ -254,13 +254,31 @@ def track_dispute(case_id: str, db: Session = Depends(get_db)):
     except Exception:
         pass
 
+    status = c.get("status", "Dispute Raised")
+
+    # If analyst has created requests, use those. Otherwise fall back to evidence_assessment.
     if doc_request_items:
         required_docs  = [r["document_type"] for r in doc_request_items]
         pending_docs   = [r["document_type"] for r in doc_request_items if not r["fulfilled"]]
         received_count = sum(1 for r in doc_request_items if r["fulfilled"])
+    else:
+        # Pull missing_documents from evidence_assessment (set by EIA)
+        ev = c.get("evidence_assessment") or {}
+        ea_missing = ev.get("missing_documents") or []
+        if ea_missing:
+            required_docs  = ea_missing
+            pending_docs   = ea_missing   # none received yet — no uploads logged
+            received_count = 0
+            # Synthesise virtual doc_request_items so the frontend renders them
+            for idx, doc_type in enumerate(ea_missing):
+                doc_request_items.append({
+                    "id":            -(idx + 1),   # negative = virtual (not in DB)
+                    "document_type": doc_type,
+                    "description":   "",
+                    "fulfilled":     False,
+                    "due_date":      None,
+                })
 
-    # doc_requested: true whenever analyst has created requests OR case is Pending Documents
-    status = c.get("status", "Dispute Received")
     doc_requested = bool(doc_request_items) or status == "Pending Documents"
 
     # ── Estimated resolution ──────────────────────────────────────────────────
