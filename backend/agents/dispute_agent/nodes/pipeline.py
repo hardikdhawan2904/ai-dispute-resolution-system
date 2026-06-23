@@ -363,7 +363,7 @@ def finalize_node(state: DisputeAgentState) -> dict:
     fraud_flag = bool(parsed.get("fraud_suspicion"))
     category   = str(parsed.get("dispute_category") or "")
 
-    conf = 0.50
+    conf = 0.30   # reduced baseline — better discrimination between strong and exceptional cases
 
     # Data completeness (±0.10)
     if all(d.get(f) for f in _REQUIRED_FIELDS):
