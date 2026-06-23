@@ -498,12 +498,7 @@ def fraud_reasoning_node(state: DisputeWorkflowState) -> dict:
                 "identity_verification": fraud_output.get("identity_verification"),
             },
         )
-        # CCA — notify customer that additional verification is in progress
-        try:
-            from services.communication_service import trigger_communication_async
-            trigger_communication_async(state.get("case_id", ""), "FRAUD_REVIEW_STARTED")
-        except Exception:
-            pass
+        # FRAUD_REVIEW_STARTED not auto-sent — internal step. Analyst can send manually.
 
         return {
             "fraud_output":         fraud_output,
@@ -776,12 +771,7 @@ def evidence_node(state: DisputeWorkflowState) -> dict:
                 "missing_docs":          len(evidence_assessment.get("missing_documents", [])),
             },
         )
-        # CCA — notify customer that document review is complete
-        try:
-            from services.communication_service import trigger_communication_async
-            trigger_communication_async(state.get("case_id", ""), "EVIDENCE_REVIEW_COMPLETED")
-        except Exception:
-            pass
+        # EVIDENCE_REVIEW_COMPLETED not auto-sent — internal step. Analyst can send manually.
 
         return {
             "evidence_output":      evidence_assessment,

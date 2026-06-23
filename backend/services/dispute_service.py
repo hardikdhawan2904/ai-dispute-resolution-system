@@ -201,18 +201,8 @@ class DisputeService:
             extra={"case_id": db_case.case_id, "priority": db_case.priority},
         )
 
-        # CCA — if analysis determined docs are required, notify customer immediately.
-        # INVESTIGATION_STARTED / FRAUD_REVIEW_STARTED / EVIDENCE_REVIEW_COMPLETED
-        # are already triggered inside dispute_workflow.py nodes.
-        try:
-            if final_case.get("status") == "Pending Documents":
-                _req_docs = (final_case.get("investigation_plan") or {}).get("required_documents", [])
-                trigger_communication_async(
-                    db_case.case_id, "DOCUMENT_REQUESTED",
-                    context={"requested_documents": _req_docs, "_skip_dedup": True},
-                )
-        except Exception:
-            pass
+        # DOCUMENT_REQUESTED is sent by document_request_service when analyst
+        # formally creates a request — not auto-sent here to avoid noise.
 
         return {
             "success": True,
@@ -331,16 +321,7 @@ class DisputeService:
             DisputeService._persist_workflow_states(db, case_id, execution_trace)
             db.commit()
 
-            # CCA — if docs are required after analysis, notify customer.
-            try:
-                if final_case.get("status") == "Pending Documents":
-                    _req_docs = (final_case.get("investigation_plan") or {}).get("required_documents", [])
-                    trigger_communication_async(
-                        case_id, "DOCUMENT_REQUESTED",
-                        context={"requested_documents": _req_docs, "_skip_dedup": True},
-                    )
-            except Exception:
-                pass
+            # DOCUMENT_REQUESTED sent by analyst via document_request_service, not here.
 
             audit_logger.info("Background pipeline complete", extra={"case_id": case_id})
             return {"success": True, "case_id": case_id, "final_case": db_case.to_dict()}
