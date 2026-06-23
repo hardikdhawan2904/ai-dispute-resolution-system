@@ -759,32 +759,41 @@ export default function CaseWorkspace() {
                 {/* ── Identity Verification + Device + Behavioral ───────── */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.875rem" }}>
 
-                  {/* KYC Match */}
+                  {/* KYC Match — only shown for digital channels where KYC tool runs */}
                   <Panel>
                     <SectionTitle>Identity Verification</SectionTitle>
-                    <div style={{ display: "flex", flexDirection: "column" }}>
-                      {[
-                        { label: "KYC Match — Name",    ok: kycData.name_match },
-                        { label: "KYC Match — Contact", ok: kycData.contact_match },
-                      ].map(({ label, ok }) => (
-                        <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 0", borderBottom: "1px solid #1E293B" }}>
-                          <span style={{ fontSize: "0.7rem", color: "#64748B" }}>{label}</span>
-                          {ok ? (
-                            <span style={{ fontSize: "0.68rem", fontWeight: 600, color: "#4ADE80", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                              <CheckCircle style={{ width: 12, height: 12 }} /> Match
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: "0.68rem", fontWeight: 600, color: "#FCA5A5", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                              <AlertTriangle style={{ width: 12, height: 12 }} /> Mismatch
-                            </span>
-                          )}
+                    {(isCardPOS || isATM) ? (
+                      <div style={{ padding: "0.75rem 0", textAlign: "center" }}>
+                        <div style={{ fontSize: "0.72rem", color: "#475569", marginBottom: 4 }}>Not applicable</div>
+                        <div style={{ fontSize: "0.65rem", color: "#334155" }}>
+                          KYC verification is not performed for {isATM ? "ATM" : "Card POS"} transactions — no customer device data available.
                         </div>
-                      ))}
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 0" }}>
-                        <span style={{ fontSize: "0.7rem", color: "#64748B" }}>Customer Since</span>
-                        <span style={{ fontSize: "0.72rem", color: "#F8FAFC", fontFamily: "ui-monospace, monospace" }}>{kycData.join_date || "—"}</span>
                       </div>
-                    </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column" }}>
+                        {[
+                          { label: "KYC Match — Name",    ok: kycData.name_match },
+                          { label: "KYC Match — Contact", ok: kycData.contact_match },
+                        ].map(({ label, ok }) => (
+                          <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 0", borderBottom: "1px solid #1E293B" }}>
+                            <span style={{ fontSize: "0.7rem", color: "#64748B" }}>{label}</span>
+                            {ok ? (
+                              <span style={{ fontSize: "0.68rem", fontWeight: 600, color: "#4ADE80", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                <CheckCircle style={{ width: 12, height: 12 }} /> Match
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: "0.68rem", fontWeight: 600, color: "#FCA5A5", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                <AlertTriangle style={{ width: 12, height: 12 }} /> Mismatch
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 0" }}>
+                          <span style={{ fontSize: "0.7rem", color: "#64748B" }}>Customer Since</span>
+                          <span style={{ fontSize: "0.72rem", color: "#F8FAFC", fontFamily: "ui-monospace, monospace" }}>{kycData.join_date || "—"}</span>
+                        </div>
+                      </div>
+                    )}
                   </Panel>
 
                   {/* Device Fingerprint + Location — only relevant for digital channels */}
