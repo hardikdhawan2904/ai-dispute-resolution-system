@@ -730,6 +730,38 @@ export default function CaseWorkspace() {
                   </Panel>
                 )}
 
+                {/* ── Card Fraud Intelligence (Card POS only) ──────────── */}
+                {isCardPOS && (() => {
+                  const rows = [
+                    { label: "Merchant Compromise Risk",      value: toolSignals.merchant_compromise_level ?? "LOW",    flag: toolSignals.merchant_compromise_level === "HIGH" || toolSignals.merchant_compromise_level === "CRITICAL", desc: "Abnormal dispute spike at this merchant in last 7 days" },
+                    { label: "First-Time High-Value Merchant", value: toolSignals.first_time_high_value ? "Detected" : "Clear",   flag: !!toolSignals.first_time_high_value, desc: "Customer has never transacted here before at this amount" },
+                    { label: "Merchant Favor Rate",           value: toolSignals.merchant_favor_rate != null ? `${toolSignals.merchant_favor_rate}%` : "N/A", flag: (toolSignals.merchant_favor_rate ?? 0) > 70, desc: "Rate at which disputes at this merchant are resolved for customers" },
+                    { label: "Card Testing Pattern",          value: toolSignals.card_testing_detected ? "Detected" : "Clear",    flag: !!toolSignals.card_testing_detected, desc: "Multiple micro-transactions (≤₹50) before main transaction" },
+                    { label: "Merchant Burst (Multi-Hop)",   value: toolSignals.merchant_burst_detected ? "Detected" : "Clear",  flag: !!toolSignals.merchant_burst_detected, desc: "4+ different merchants within 30 minutes" },
+                    { label: "Merchant Category Risk",        value: toolSignals.mcc_risk_level ?? "LOW",                        flag: toolSignals.mcc_risk_level === "HIGH" || toolSignals.mcc_risk_level === "CRITICAL", desc: "Risk level of this merchant's business category" },
+                    { label: "Decline-Then-Success Pattern", value: toolSignals.decline_success_pattern ? "Detected" : "Clear",  flag: !!toolSignals.decline_success_pattern, desc: "Multiple declined attempts before successful authorization" },
+                    { label: "Refund Claim Verified",         value: toolSignals.refund_claim_unverified ? "Unverified" : "Verified", flag: !!toolSignals.refund_claim_unverified, desc: "Checks if corresponding reversal transaction exists" },
+                  ];
+                  const visible = rows.filter(r => r.flag || (r.value !== "Clear" && r.value !== "LOW" && r.value !== "N/A" && r.value !== "Verified"));
+                  if (visible.length === 0) return null;
+                  return (
+                    <Panel>
+                      <SectionTitle>Card Fraud Intelligence</SectionTitle>
+                      <div style={{ display: "flex", flexDirection: "column" }}>
+                        {visible.map(({ label, value, flag, desc }) => (
+                          <div key={label} style={{ display: "flex", flexDirection: "column", padding: "0.5rem 0", borderBottom: "1px solid #1E293B" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <span style={{ fontSize: "0.7rem", color: "#64748B" }}>{label}</span>
+                              <span style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 8px", borderRadius: 3, backgroundColor: flag ? "rgba(239,68,68,0.1)" : "rgba(74,222,128,0.1)", color: flag ? "#FCA5A5" : "#4ADE80", border: `1px solid ${flag ? "rgba(239,68,68,0.3)" : "rgba(74,222,128,0.3)"}` }}>{value}</span>
+                            </div>
+                            <span style={{ fontSize: "0.62rem", color: "#334155", marginTop: 2 }}>{desc}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </Panel>
+                  );
+                })()}
+
                 {isATM && (
                   <Panel>
                     <SectionTitle>ATM Signals</SectionTitle>

@@ -136,6 +136,15 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
                 TOOL_REGISTRY["analyze_card_present_anomalies"],
                 {"customer_id": customer_id, "merchant": merchant, "amount": amount, "transaction_time": transaction_time}
             ),
+            # Advanced card intelligence tools
+            "detect_merchant_compromise_pattern":  (TOOL_REGISTRY["detect_merchant_compromise_pattern"],  {"case_id": case_id}),
+            "analyze_first_time_merchant":          (TOOL_REGISTRY["analyze_first_time_merchant"],          {"case_id": case_id}),
+            "evaluate_merchant_resolution_history": (TOOL_REGISTRY["evaluate_merchant_resolution_history"], {"case_id": case_id}),
+            "detect_card_testing_pattern":          (TOOL_REGISTRY["detect_card_testing_pattern"],          {"case_id": case_id}),
+            "analyze_multi_merchant_burst":         (TOOL_REGISTRY["analyze_multi_merchant_burst"],         {"case_id": case_id}),
+            "evaluate_mcc_risk":                    (TOOL_REGISTRY["evaluate_mcc_risk"],                    {"case_id": case_id}),
+            "analyze_decline_success_pattern":      (TOOL_REGISTRY["analyze_decline_success_pattern"],      {"case_id": case_id}),
+            "check_refund_reversal_absence":        (TOOL_REGISTRY["check_refund_reversal_absence"],        {"case_id": case_id}),
         }
 
     else:  # ATM
@@ -168,7 +177,7 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
 
     tool_results: dict = {}
     tools_used: list = []
-    max_workers = min(len(task_defs), 8)
+    max_workers = min(len(task_defs), 16)
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = {
             ex.submit(_run_one, name, fn, args): name
@@ -186,6 +195,9 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
         "evaluate_merchant_risk_intelligence",
         "analyze_card_velocity", "evaluate_atm_pos_distance", "analyze_foreign_usage", "analyze_card_present_anomalies",
         "analyze_atm_velocity", "evaluate_atm_geovelocity", "analyze_cash_withdrawal_patterns",
+        "detect_merchant_compromise_pattern", "analyze_first_time_merchant", "evaluate_merchant_resolution_history",
+        "detect_card_testing_pattern", "analyze_multi_merchant_burst", "evaluate_mcc_risk",
+        "analyze_decline_success_pattern", "check_refund_reversal_absence",
     ]
     tool_section = f"\n\n## PRE-COMPUTED TOOL RESULTS (Channel: {channel})\n(All tools executed — synthesise and produce JSON now)\n"
     for name in _TOOL_ORDER:
@@ -536,6 +548,66 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     if atm_geo_breach:        prob += 0.35
     if cash_anomaly:          prob += 0.15
 
+    # ── Card POS advanced intelligence ───────────────────────────────────────
+    _mc_report   = str(tool_results.get("detect_merchant_compromise_pattern", ""))
+    _ftm_report  = str(tool_results.get("analyze_first_time_merchant", ""))
+    _mrh_report  = str(tool_results.get("evaluate_merchant_resolution_history", ""))
+    _ct_report   = str(tool_results.get("detect_card_testing_pattern", ""))
+    _mmb_report  = str(tool_results.get("analyze_multi_merchant_burst", ""))
+    _mcc_report  = str(tool_results.get("evaluate_mcc_risk", ""))
+    _dsp_report  = str(tool_results.get("analyze_decline_success_pattern", ""))
+    _rra_report  = str(tool_results.get("check_refund_reversal_absence", ""))
+
+    merchant_compromise_level = "LOW"
+    for _l in _mc_report.split("\n"):
+        if "Risk Level" in _l:
+            if "CRITICAL" in _l: merchant_compromise_level = "CRITICAL"
+            elif "HIGH" in _l:   merchant_compromise_level = "HIGH"
+
+    first_time_high_value = any("High Value First Time" in _l and "Yes" in _l for _l in _ftm_report.split("\n"))
+
+    merchant_favor_rate = 0.0
+    for _l in _mrh_report.split("\n"):
+        if "Customer Favor Rate" in _l:
+            try: merchant_favor_rate = float(_l.split(":")[-1].replace("%", "").strip())
+            except Exception: pass
+
+    card_testing_detected  = any("Card Testing Detected" in _l and "Yes" in _l for _l in _ct_report.split("\n"))
+    merchant_burst_detected = any("Merchant Burst Detected" in _l and "Yes" in _l for _l in _mmb_report.split("\n"))
+
+    mcc_risk_level = "LOW"
+    for _l in _mcc_report.split("\n"):
+        if "Category Risk Level" in _l:
+            if "CRITICAL" in _l: mcc_risk_level = "CRITICAL"
+            elif "HIGH" in _l:   mcc_risk_level = "HIGH"
+            elif "MEDIUM" in _l: mcc_risk_level = "MEDIUM"
+
+    decline_success_pattern = any("Pattern Detected" in _l and "Yes" in _l for _l in _dsp_report.split("\n"))
+    refund_claim_unverified = any("Refund Claim Unverified" in _l and "Yes" in _l for _l in _rra_report.split("\n"))
+
+    # Merchant compromise
+    if merchant_compromise_level == "CRITICAL":  prob += 0.40
+    elif merchant_compromise_level == "HIGH":    prob += 0.25
+
+    # First-time high-value merchant
+    if first_time_high_value:                    prob += 0.15
+
+    # Historical merchant resolution pattern
+    if merchant_favor_rate > 85.0:              prob += 0.25
+    elif merchant_favor_rate > 70.0:            prob += 0.15
+
+    # Card fraud patterns
+    if card_testing_detected:                    prob += 0.30
+    if merchant_burst_detected:                 prob += 0.25
+
+    # MCC risk
+    if mcc_risk_level == "CRITICAL":            prob += 0.20
+    elif mcc_risk_level == "HIGH":              prob += 0.10
+
+    # Decline-success and refund
+    if decline_success_pattern:                 prob += 0.20
+    if refund_claim_unverified:                 prob += 0.15
+
     fraud_probability = round(max(0.00, min(1.00, prob)), 2)
 
     # Calibrate Risk Level
@@ -591,12 +663,21 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     parsed["channel"] = channel
     parsed["transaction_type_detected"] = d.get("transaction_type", "")
     parsed["tool_signals"] = {
-        "card_velocity_breach":    card_velocity_breach,
-        "atm_pos_impossible_travel": atm_pos_impossible,
-        "foreign_usage":           foreign_usage,
-        "atm_velocity_breach":     atm_velocity_breach,
-        "atm_geo_breach":          atm_geo_breach,
-        "cash_withdrawal_anomaly": cash_anomaly,
+        "card_velocity_breach":       card_velocity_breach,
+        "atm_pos_impossible_travel":  atm_pos_impossible,
+        "foreign_usage":              foreign_usage,
+        "atm_velocity_breach":        atm_velocity_breach,
+        "atm_geo_breach":             atm_geo_breach,
+        "cash_withdrawal_anomaly":    cash_anomaly,
+        # Card POS advanced intelligence
+        "merchant_compromise_level":  merchant_compromise_level,
+        "first_time_high_value":      first_time_high_value,
+        "merchant_favor_rate":        round(merchant_favor_rate, 1),
+        "card_testing_detected":      card_testing_detected,
+        "merchant_burst_detected":    merchant_burst_detected,
+        "mcc_risk_level":             mcc_risk_level,
+        "decline_success_pattern":    decline_success_pattern,
+        "refund_claim_unverified":    refund_claim_unverified,
     }
 
     log_workflow_event(

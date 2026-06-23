@@ -1243,6 +1243,469 @@ def analyze_cash_withdrawal_patterns(customer_id: str, amount: float) -> str:
         db.close()
 
 
+# ── Card POS Advanced Intelligence Tools ─────────────────────────────────────
+
+@tool
+def detect_merchant_compromise_pattern(case_id: str) -> str:
+    """Detect if the disputed merchant has an abnormal dispute spike in the last 7-30 days,
+    indicating a possible merchant compromise or skimming device installation."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, DisputeHistory, MerchantProfile
+    from datetime import datetime, timezone, timedelta
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "MERCHANT COMPROMISE PATTERN\n  Error: Case not found\n  Risk Level: LOW"
+
+        merchant_name = case.merchant or ""
+        now = datetime.now(timezone.utc)
+        w7  = now - timedelta(days=7)
+        w30 = now - timedelta(days=30)
+
+        hist_7d  = db.query(DisputeHistory).filter(
+            DisputeHistory.merchant_id.ilike(f"%{merchant_name}%") |
+            DisputeHistory.dispute_category.isnot(None),
+            DisputeHistory.created_at >= w7,
+        ).all()
+        # Filter by merchant name in dispute records
+        hist_7d  = [h for h in hist_7d if merchant_name.lower() in (h.merchant_id or "").lower()] if merchant_name else []
+
+        hist_30d = db.query(DisputeHistory).filter(
+            DisputeHistory.created_at >= w30,
+        ).all()
+        hist_30d = [h for h in hist_30d if merchant_name.lower() in (h.merchant_id or "").lower()] if merchant_name else []
+
+        recent_7d  = len(hist_7d)
+        recent_30d = len(hist_30d)
+        affected   = len(set(h.customer_id for h in hist_30d))
+
+        mp = db.query(MerchantProfile).filter(
+            MerchantProfile.merchant_name.ilike(f"%{merchant_name}%")
+        ).first()
+
+        total_txns   = (mp.total_transactions or 1) if mp else 1
+        dispute_rate = round(recent_30d / total_txns * 100, 2)
+
+        compromise_detected = recent_7d >= 10 or affected >= 5 or dispute_rate > 15.0
+        if recent_7d >= 20 or affected >= 15:
+            risk = "CRITICAL"
+        elif compromise_detected:
+            risk = "HIGH"
+        else:
+            risk = "LOW"
+
+        return (
+            "MERCHANT COMPROMISE PATTERN REPORT\n"
+            f"  Merchant             : {merchant_name}\n"
+            f"  7-Day Disputes       : {recent_7d}\n"
+            f"  30-Day Disputes      : {recent_30d}\n"
+            f"  Affected Customers   : {affected}\n"
+            f"  Dispute Rate (30d)   : {dispute_rate}%\n"
+            f"  Compromise Detected  : {'Yes — ALERT' if compromise_detected else 'No'}\n"
+            f"  Risk Level           : {risk}\n"
+            f"  Assessment           : {'Abnormal dispute spike — possible merchant compromise or skimming device.' if compromise_detected else 'Dispute volume within normal range.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"detect_merchant_compromise_pattern failed: {exc}")
+        return f"MERCHANT COMPROMISE PATTERN REPORT\n  Error: {exc}\n  Risk Level: LOW"
+    finally:
+        db.close()
+
+
+@tool
+def analyze_first_time_merchant(case_id: str) -> str:
+    """Determine if the customer has ever transacted with this merchant before.
+    First-time high-value transactions at unfamiliar merchants are a key card fraud signal."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, Transaction
+    from sqlalchemy import func
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "FIRST-TIME MERCHANT ANALYSIS\n  Error: Case not found\n  High Value First Time: No"
+
+        customer_id  = (case.customer_id or "").upper()
+        merchant     = case.merchant or ""
+        amount       = float(case.amount or 0)
+        txn_id       = case.transaction_id or ""
+
+        prior_txns = db.query(Transaction).filter(
+            Transaction.customer_id == customer_id,
+            func.lower(Transaction.merchant_name).contains(merchant.lower()),
+            Transaction.transaction_id != txn_id,
+        ).all()
+        prior_count = len(prior_txns)
+        first_time  = prior_count == 0
+
+        all_txns = db.query(Transaction).filter(
+            Transaction.customer_id == customer_id,
+        ).order_by(Transaction.transaction_date.desc()).limit(30).all()
+        avg_amount = sum(t.amount for t in all_txns) / max(len(all_txns), 1)
+
+        high_value_first_time = first_time and amount > avg_amount * 1.5
+
+        return (
+            "FIRST-TIME MERCHANT ANALYSIS\n"
+            f"  Merchant             : {merchant}\n"
+            f"  Prior Transactions   : {prior_count}\n"
+            f"  First Time           : {'Yes' if first_time else 'No'}\n"
+            f"  Transaction Amount   : {amount:,.2f}\n"
+            f"  Customer Average     : {avg_amount:,.2f}\n"
+            f"  High Value First Time: {'Yes — ALERT' if high_value_first_time else 'No'}\n"
+            f"  Assessment           : {'No prior history with merchant at high value — card fraud indicator.' if high_value_first_time else 'Prior merchant relationship exists or amount is within normal range.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_first_time_merchant failed: {exc}")
+        return f"FIRST-TIME MERCHANT ANALYSIS\n  Error: {exc}\n  High Value First Time: No"
+    finally:
+        db.close()
+
+
+@tool
+def evaluate_merchant_resolution_history(case_id: str) -> str:
+    """Evaluate merchant dispute resolution history to identify merchants where
+    customers frequently win disputes, indicating merchant fault patterns."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, MerchantProfile
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "MERCHANT RESOLUTION HISTORY\n  Error: Case not found\n  Merchant Dispute Risk: LOW"
+
+        merchant = case.merchant or ""
+        mp = db.query(MerchantProfile).filter(
+            MerchantProfile.merchant_name.ilike(f"%{merchant}%")
+        ).first()
+
+        if not mp:
+            return (
+                "MERCHANT RESOLUTION HISTORY\n"
+                f"  Merchant             : {merchant}\n"
+                "  Status               : Not in merchant profiles\n"
+                "  Customer Favor Rate  : N/A\n"
+                "  Merchant Dispute Risk: LOW"
+            )
+
+        cust_favor   = mp.resolved_customer_favor or 0
+        merch_favor  = mp.resolved_merchant_favor or 0
+        total_res    = cust_favor + merch_favor
+        cust_rate    = (cust_favor / max(total_res, 1)) * 100
+
+        if cust_rate > 85:
+            risk = "CRITICAL"
+        elif cust_rate > 70:
+            risk = "HIGH"
+        elif cust_rate > 50:
+            risk = "MEDIUM"
+        else:
+            risk = "LOW"
+
+        return (
+            "MERCHANT RESOLUTION HISTORY\n"
+            f"  Merchant             : {mp.merchant_name}\n"
+            f"  Total Resolved       : {total_res}\n"
+            f"  Customer Favor Count : {cust_favor}\n"
+            f"  Merchant Favor Count : {merch_favor}\n"
+            f"  Customer Favor Rate  : {cust_rate:.1f}%\n"
+            f"  Merchant Dispute Risk: {risk}\n"
+            f"  Assessment           : {'Very high customer win rate — merchant likely at fault.' if risk in ('CRITICAL','HIGH') else 'Dispute resolution pattern within normal range.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"evaluate_merchant_resolution_history failed: {exc}")
+        return f"MERCHANT RESOLUTION HISTORY\n  Error: {exc}\n  Merchant Dispute Risk: LOW"
+    finally:
+        db.close()
+
+
+@tool
+def detect_card_testing_pattern(case_id: str) -> str:
+    """Detect card testing activity — fraudsters make small micro-transactions
+    (INR 1-50) to verify a stolen card before making large fraudulent purchases."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, Transaction
+    from datetime import datetime, timezone, timedelta
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "CARD TESTING PATTERN REPORT\n  Error: Case not found\n  Card Testing Detected: No"
+
+        customer_id = (case.customer_id or "").upper()
+        txn_date    = case.transaction_date
+        if isinstance(txn_date, str):
+            try:
+                txn_date = datetime.fromisoformat(txn_date)
+            except Exception:
+                txn_date = datetime.now(timezone.utc)
+        if txn_date and txn_date.tzinfo is None:
+            txn_date = txn_date.replace(tzinfo=timezone.utc)
+        window_start = (txn_date or datetime.now(timezone.utc)) - timedelta(hours=24)
+
+        txns = db.query(Transaction).filter(
+            Transaction.customer_id == customer_id,
+            Transaction.transaction_date >= window_start,
+            Transaction.amount <= 50,
+            Transaction.status.in_(["Success", "Pending"]),
+        ).order_by(Transaction.transaction_date).all()
+
+        test_count = len(txns)
+        card_testing = test_count >= 3
+
+        time_window = ""
+        if card_testing and len(txns) >= 2:
+            t1 = txns[0].transaction_date
+            t2 = txns[-1].transaction_date
+            if t1 and t2:
+                if t1.tzinfo is None: t1 = t1.replace(tzinfo=timezone.utc)
+                if t2.tzinfo is None: t2 = t2.replace(tzinfo=timezone.utc)
+                mins = round(abs((t2 - t1).total_seconds()) / 60, 1)
+                time_window = f"{mins} minutes"
+
+        return (
+            "CARD TESTING PATTERN REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  Micro-Txn Count (<=50): {test_count}\n"
+            f"  Card Testing Detected: {'Yes — ALERT' if card_testing else 'No'}\n"
+            + (f"  Test Window          : {time_window}\n" if time_window else "") +
+            f"  Assessment           : {'Multiple micro-transactions detected — classic card verification pattern before large fraud.' if card_testing else 'No card testing activity detected.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"detect_card_testing_pattern failed: {exc}")
+        return f"CARD TESTING PATTERN REPORT\n  Error: {exc}\n  Card Testing Detected: No"
+    finally:
+        db.close()
+
+
+@tool
+def analyze_multi_merchant_burst(case_id: str) -> str:
+    """Detect rapid merchant-hopping — a stolen card pattern where fraudsters
+    quickly visit multiple merchants to maximize value before the card is blocked."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, Transaction
+    from datetime import datetime, timezone, timedelta
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "MULTI-MERCHANT BURST REPORT\n  Error: Case not found\n  Merchant Burst Detected: No"
+
+        customer_id = (case.customer_id or "").upper()
+        txn_date    = case.transaction_date
+        if isinstance(txn_date, str):
+            try:
+                txn_date = datetime.fromisoformat(txn_date)
+            except Exception:
+                txn_date = datetime.now(timezone.utc)
+        if txn_date and txn_date.tzinfo is None:
+            txn_date = txn_date.replace(tzinfo=timezone.utc)
+        window_start = (txn_date or datetime.now(timezone.utc)) - timedelta(hours=2)
+
+        txns = db.query(Transaction).filter(
+            Transaction.customer_id == customer_id,
+            Transaction.transaction_date >= window_start,
+        ).order_by(Transaction.transaction_date).all()
+
+        unique_merchants = len(set(t.merchant_name for t in txns if t.merchant_name))
+        duration_minutes = 0.0
+        if len(txns) >= 2:
+            t1 = txns[0].transaction_date
+            t2 = txns[-1].transaction_date
+            if t1 and t2:
+                if t1.tzinfo is None: t1 = t1.replace(tzinfo=timezone.utc)
+                if t2.tzinfo is None: t2 = t2.replace(tzinfo=timezone.utc)
+                duration_minutes = round(abs((t2 - t1).total_seconds()) / 60, 1)
+
+        burst_detected = unique_merchants >= 4 and duration_minutes <= 30
+
+        return (
+            "MULTI-MERCHANT BURST REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  Transactions (2h)    : {len(txns)}\n"
+            f"  Unique Merchants     : {unique_merchants}\n"
+            f"  Duration (minutes)   : {duration_minutes}\n"
+            f"  Merchant Burst Detected: {'Yes — ALERT' if burst_detected else 'No'}\n"
+            f"  Assessment           : {'Rapid merchant hopping detected — consistent with stolen card fraud pattern.' if burst_detected else 'Transaction sequence within normal merchant usage patterns.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_multi_merchant_burst failed: {exc}")
+        return f"MULTI-MERCHANT BURST REPORT\n  Error: {exc}\n  Merchant Burst Detected: No"
+    finally:
+        db.close()
+
+
+@tool
+def evaluate_mcc_risk(case_id: str) -> str:
+    """Score the merchant category risk level for card fraud.
+    Certain merchant categories have significantly higher card fraud rates."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, MerchantProfile
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "MCC RISK ANALYSIS\n  Error: Case not found\n  Category Risk Level: LOW"
+
+        merchant_name = (case.merchant or "").lower()
+
+        mp = db.query(MerchantProfile).filter(
+            MerchantProfile.merchant_name.ilike(f"%{case.merchant}%")
+        ).first()
+
+        category = (mp.merchant_category or "").lower() if mp else ""
+
+        _CRITICAL = {"crypto", "gift card", "gaming credits", "virtual currency", "prepaid card"}
+        _HIGH     = {"electronics", "jewellery", "jewelry", "gaming", "travel", "airline",
+                     "luxury", "forex", "digital goods", "online marketplace", "money transfer"}
+        _LOW      = {"grocery", "pharmacy", "fuel", "petrol", "utilities", "hospital",
+                     "medical", "supermarket", "bakery", "restaurant"}
+
+        def _match(word_set: set, text: str) -> bool:
+            return any(w in text for w in word_set)
+
+        combined = f"{category} {merchant_name}"
+        if _match(_CRITICAL, combined):
+            risk = "CRITICAL"
+            ctx  = "Highest-risk merchant category — crypto/gift cards are primary targets for card fraud."
+        elif _match(_HIGH, combined):
+            risk = "HIGH"
+            ctx  = "High-risk merchant category — electronics, travel, and luxury goods are frequent card fraud targets."
+        elif _match(_LOW, combined):
+            risk = "LOW"
+            ctx  = "Low-risk merchant category — everyday essential purchases show low fraud rates."
+        else:
+            risk = "MEDIUM"
+            ctx  = "Moderate-risk merchant category."
+
+        return (
+            "MCC RISK ANALYSIS\n"
+            f"  Merchant             : {case.merchant}\n"
+            f"  Merchant Category    : {mp.merchant_category if mp else 'Unknown'}\n"
+            f"  Category Risk Level  : {risk}\n"
+            f"  Assessment           : {ctx}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"evaluate_mcc_risk failed: {exc}")
+        return f"MCC RISK ANALYSIS\n  Error: {exc}\n  Category Risk Level: LOW"
+    finally:
+        db.close()
+
+
+@tool
+def analyze_decline_success_pattern(case_id: str) -> str:
+    """Detect card testing pattern: multiple declined transactions followed by
+    a successful one — indicates fraudster testing stolen card details."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, Transaction
+    from datetime import datetime, timezone, timedelta
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "DECLINE-SUCCESS PATTERN REPORT\n  Error: Case not found\n  Pattern Detected: No"
+
+        customer_id = (case.customer_id or "").upper()
+        txn_date    = case.transaction_date
+        if isinstance(txn_date, str):
+            try:
+                txn_date = datetime.fromisoformat(txn_date)
+            except Exception:
+                txn_date = datetime.now(timezone.utc)
+        if txn_date and txn_date.tzinfo is None:
+            txn_date = txn_date.replace(tzinfo=timezone.utc)
+        window_start = (txn_date or datetime.now(timezone.utc)) - timedelta(hours=24)
+
+        txns = db.query(Transaction).filter(
+            Transaction.customer_id == customer_id,
+            Transaction.transaction_date >= window_start,
+        ).order_by(Transaction.transaction_date).all()
+
+        txn_dt = txn_date or datetime.now(timezone.utc)
+        declined_before = [
+            t for t in txns
+            if t.status in ("Failed", "Pending") and t.transaction_date and
+            (t.transaction_date.replace(tzinfo=timezone.utc) if t.transaction_date.tzinfo is None else t.transaction_date) < txn_dt
+        ]
+        pattern_detected = len(declined_before) >= 2
+
+        return (
+            "DECLINE-SUCCESS PATTERN REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  Total Transactions (24h): {len(txns)}\n"
+            f"  Declined Attempts    : {len(declined_before)}\n"
+            f"  Pattern Detected     : {'Yes — ALERT' if pattern_detected else 'No'}\n"
+            f"  Assessment           : {'Multiple declined attempts before success — card testing pattern detected.' if pattern_detected else 'No anomalous decline pattern detected.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_decline_success_pattern failed: {exc}")
+        return f"DECLINE-SUCCESS PATTERN REPORT\n  Error: {exc}\n  Pattern Detected: No"
+    finally:
+        db.close()
+
+
+@tool
+def check_refund_reversal_absence(case_id: str) -> str:
+    """Verify refund/reversal claims by checking if a corresponding reversal
+    transaction exists in records. Unverified refund claims indicate fraud."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, Transaction
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import func
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "REFUND REVERSAL ANALYSIS\n  Error: Case not found\n  Refund Claim Unverified: No"
+
+        category = (case.dispute_category or "").lower()
+        if "refund" not in category and "reversal" not in category:
+            return (
+                "REFUND REVERSAL ANALYSIS\n"
+                f"  Dispute Category     : {case.dispute_category or 'N/A'}\n"
+                "  Not applicable — dispute is not a refund claim.\n"
+                "  Refund Claim Unverified: No"
+            )
+
+        customer_id  = (case.customer_id or "").upper()
+        merchant     = case.merchant or ""
+        amount       = float(case.amount or 0)
+        window_start = datetime.now(timezone.utc) - timedelta(days=60)
+
+        reversals = db.query(Transaction).filter(
+            Transaction.customer_id == customer_id,
+            func.lower(Transaction.merchant_name).contains(merchant.lower()),
+            Transaction.status == "Reversed",
+            Transaction.transaction_date >= window_start,
+        ).all()
+
+        reversal_found       = len(reversals) > 0
+        refund_claim_unverif = not reversal_found
+
+        return (
+            "REFUND REVERSAL ANALYSIS\n"
+            f"  Merchant             : {merchant}\n"
+            f"  Claimed Amount       : {amount:,.2f}\n"
+            f"  Reversal Txns Found  : {len(reversals)}\n"
+            f"  Refund Claim Unverified: {'Yes — ALERT' if refund_claim_unverif else 'No'}\n"
+            f"  Assessment           : {'No reversal transaction found — refund claim cannot be verified.' if refund_claim_unverif else 'Reversal transaction confirmed in records.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"check_refund_reversal_absence failed: {exc}")
+        return f"REFUND REVERSAL ANALYSIS\n  Error: {exc}\n  Refund Claim Unverified: No"
+    finally:
+        db.close()
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: dict = {
@@ -1264,4 +1727,13 @@ TOOL_REGISTRY: dict = {
     "analyze_atm_velocity":               analyze_atm_velocity,
     "evaluate_atm_geovelocity":           evaluate_atm_geovelocity,
     "analyze_cash_withdrawal_patterns":   analyze_cash_withdrawal_patterns,
+    # Card POS — advanced intelligence
+    "detect_merchant_compromise_pattern":  detect_merchant_compromise_pattern,
+    "analyze_first_time_merchant":         analyze_first_time_merchant,
+    "evaluate_merchant_resolution_history": evaluate_merchant_resolution_history,
+    "detect_card_testing_pattern":         detect_card_testing_pattern,
+    "analyze_multi_merchant_burst":        analyze_multi_merchant_burst,
+    "evaluate_mcc_risk":                   evaluate_mcc_risk,
+    "analyze_decline_success_pattern":     analyze_decline_success_pattern,
+    "check_refund_reversal_absence":       check_refund_reversal_absence,
 }
