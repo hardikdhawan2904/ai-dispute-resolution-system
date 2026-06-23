@@ -769,21 +769,29 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     else:
         risk_level = "CRITICAL"
 
-    # Strip score weights like (+0.10), (+0.35) from LLM-generated reasoning bullets
+    # Server-side cleanup of LLM-generated reasoning bullets
     import re as _re
-    _weight_pattern = _re.compile(r'\s*\(\+[\d.]+\)')
+    _weight_pattern     = _re.compile(r'\s*\(\+[\d.]+\)')           # (+0.10), (+0.35) etc
+    _favour_rate_pattern = _re.compile(                              # "or merchant-favour rates (X%)"
+        r'\s*(or\s+)?merchant[\-\s]favour\s+rates?\s*\([\d.]+%\)', _re.IGNORECASE
+    )
+
+    def _clean_bullets(bullets: list) -> list:
+        cleaned = []
+        for b in bullets:
+            if not b or not b.strip():
+                continue
+            b = _weight_pattern.sub("", b)
+            b = _favour_rate_pattern.sub("", b)
+            b = b.strip().rstrip(".")
+            if b:
+                cleaned.append(b + ".")
+        return cleaned
+
     if "fraud_reasoning" in parsed and isinstance(parsed["fraud_reasoning"], list):
-        parsed["fraud_reasoning"] = [
-            _weight_pattern.sub("", bullet).strip()
-            for bullet in parsed["fraud_reasoning"]
-            if bullet and bullet.strip()
-        ]
+        parsed["fraud_reasoning"] = _clean_bullets(parsed["fraud_reasoning"])
     if "trust_reasoning" in parsed and isinstance(parsed["trust_reasoning"], list):
-        parsed["trust_reasoning"] = [
-            _weight_pattern.sub("", bullet).strip()
-            for bullet in parsed["trust_reasoning"]
-            if bullet and bullet.strip()
-        ]
+        parsed["trust_reasoning"] = _clean_bullets(parsed["trust_reasoning"])
 
     # Merge verified scores into final output
     parsed["fraud_probability"] = fraud_probability
