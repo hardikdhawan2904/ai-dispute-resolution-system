@@ -55,7 +55,7 @@ def send_email(subject: str, body: str, recipient: str) -> bool:
             server.login(_SMTP_USERNAME, _SMTP_PASSWORD)
             server.sendmail(_SMTP_USERNAME, [dest], msg.as_string())
 
-        api_logger.info(f"email_service: sent '{subject}' → {dest} (intended: {recipient})")
+        api_logger.info(f"email_service: sent '{subject}' to {dest} (intended: {recipient})")
         return True
 
     except Exception as exc:

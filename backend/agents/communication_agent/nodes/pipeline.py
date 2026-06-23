@@ -116,7 +116,7 @@ def _persist_communication(
         db.commit()
         agent_logger.info(
             f"CCA: persisted communication {state.get('notification_type')} "
-            f"for {state.get('case_id')} → status={'SENT' if sent else 'FAILED'}"
+            f"for {state.get('case_id')} status={'SENT' if sent else 'FAILED'}"
         )
     except Exception as exc:
         agent_logger.error(f"CCA: failed to persist communication log: {exc}")
