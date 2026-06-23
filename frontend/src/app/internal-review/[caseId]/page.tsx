@@ -136,6 +136,8 @@ export default function CaseWorkspace() {
   const [elapsed, setElapsed]               = useState(0);
   const [uploads, setUploads]               = useState<CaseUploadFile[]>([]);
   const [lightbox, setLightbox]             = useState<string | null>(null);
+  const [selectedDocs, setSelectedDocs]     = useState<Set<string>>(new Set());
+  const [creatingDocs, setCreatingDocs]     = useState(false);
   const [activeTab, setActiveTab]           = useState<"analysis" | "fraud_review" | "investigation" | "evidence_review" | "evidence" | "audit" | "orchestration" | "advanced" | "communications">("analysis");
   const [communications, setCommunications] = useState<CommunicationLog[]>([]);
   const [expandedComm, setExpandedComm]     = useState<number | null>(null);
@@ -1492,38 +1494,81 @@ export default function CaseWorkspace() {
                   </Panel>
                 )}
 
-                {/* ── Section 4: Recommended Document Requests — sourced from missing_documents ── */}
-                {(ea.missing_documents ?? []).filter((d: string) => !BANK_OBTAINABLE.has(d)).length > 0 && (
-                  <Panel>
-                    <SectionTitle>Recommended Document Requests</SectionTitle>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      {(ea.missing_documents ?? []).filter((doc: string) => !BANK_OBTAINABLE.has(doc)).map((doc: string, i: number) => (
-                        <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem", backgroundColor: "#111827", border: "1px solid #334155", borderRadius: 3 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                            <FileText style={{ width: 12, height: 12, color: "#2563EB", flexShrink: 0 }} />
-                            <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>{doc}</span>
-                          </div>
-                          <button
-                            onClick={async () => {
-                              try {
-                                await createDocumentRequest(caseData.case_id, "system", doc, `Required for evidence review`, undefined);
-                                toast.success(`Request created: ${doc}`);
-                              } catch {
-                                toast.error("Failed to create request");
-                              }
+                {/* ── Section 4: Recommended Document Requests — select & batch send ── */}
+                {(() => {
+                  const customerDocs = (ea.missing_documents ?? []).filter((d: string) => !BANK_OBTAINABLE.has(d));
+                  if (customerDocs.length === 0) return null;
+                  const allSelected = customerDocs.every((d: string) => selectedDocs.has(d));
+                  const anySelected = customerDocs.some((d: string) => selectedDocs.has(d));
+                  return (
+                    <Panel>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                        <SectionTitle>Recommended Document Requests</SectionTitle>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.65rem", color: "#64748B", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={() => {
+                              const next = new Set(selectedDocs);
+                              if (allSelected) customerDocs.forEach((d: string) => next.delete(d));
+                              else customerDocs.forEach((d: string) => next.add(d));
+                              setSelectedDocs(next);
                             }}
-                            style={{ fontSize: "0.65rem", fontWeight: 600, padding: "0.2rem 0.625rem", backgroundColor: "#1D4ED8", color: "#F8FAFC", border: "none", borderRadius: 3, cursor: "pointer", whiteSpace: "nowrap" }}
-                          >
-                            Create Request
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <p style={{ fontSize: "0.65rem", color: "#475569", marginTop: "0.5rem", borderTop: "1px solid #334155", paddingTop: "0.5rem" }}>
-                      Creating a request will notify the customer to submit the document.
-                    </p>
-                  </Panel>
-                )}
+                            style={{ width: 13, height: 13, cursor: "pointer" }}
+                          />
+                          Select All
+                        </label>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginBottom: "0.75rem" }}>
+                        {customerDocs.map((doc: string, i: number) => {
+                          const checked = selectedDocs.has(doc);
+                          return (
+                            <label key={i} style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.5rem 0.75rem", backgroundColor: checked ? "#1a2f52" : "#162040", border: `1px solid ${checked ? "#2563EB" : "#334155"}`, borderRadius: 4, cursor: "pointer", transition: "all 0.15s" }}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  const next = new Set(selectedDocs);
+                                  checked ? next.delete(doc) : next.add(doc);
+                                  setSelectedDocs(next);
+                                }}
+                                style={{ width: 13, height: 13, cursor: "pointer", flexShrink: 0 }}
+                              />
+                              <FileText style={{ width: 12, height: 12, color: checked ? "#60A5FA" : "#2563EB", flexShrink: 0 }} />
+                              <span style={{ fontSize: "0.72rem", color: checked ? "#E2E8F0" : "#94A3B8" }}>{doc}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #334155", paddingTop: "0.625rem" }}>
+                        <p style={{ fontSize: "0.65rem", color: "#475569", margin: 0 }}>
+                          {anySelected ? `${selectedDocs.size} document${selectedDocs.size > 1 ? "s" : ""} selected — one email will be sent listing all` : "Select documents to request from customer"}
+                        </p>
+                        <button
+                          disabled={!anySelected || creatingDocs}
+                          onClick={async () => {
+                            setCreatingDocs(true);
+                            try {
+                              const docsToRequest = customerDocs.filter((d: string) => selectedDocs.has(d));
+                              for (const doc of docsToRequest) {
+                                await createDocumentRequest(caseData.case_id, "system", doc, "Required for evidence review", undefined);
+                              }
+                              setSelectedDocs(new Set());
+                              toast.success(`Document request sent for ${docsToRequest.length} document${docsToRequest.length > 1 ? "s" : ""}`);
+                            } catch {
+                              toast.error("Failed to create request");
+                            } finally {
+                              setCreatingDocs(false);
+                            }
+                          }}
+                          style={{ fontSize: "0.68rem", fontWeight: 600, padding: "0.375rem 1rem", backgroundColor: anySelected && !creatingDocs ? "#1D4ED8" : "#1E293B", color: anySelected ? "#F8FAFC" : "#475569", border: `1px solid ${anySelected ? "#2563EB" : "#334155"}`, borderRadius: 4, cursor: anySelected && !creatingDocs ? "pointer" : "not-allowed", whiteSpace: "nowrap", transition: "all 0.15s" }}
+                        >
+                          {creatingDocs ? "Sending…" : "Create Request"}
+                        </button>
+                      </div>
+                    </Panel>
+                  );
+                })()}
 
                 {/* ── Section 5: Consistency Issues ── */}
                 {(ea.consistency_issues?.length ?? 0) > 0 && (() => {
