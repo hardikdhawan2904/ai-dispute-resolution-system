@@ -1492,12 +1492,12 @@ export default function CaseWorkspace() {
                   </Panel>
                 )}
 
-                {/* ── Section 4: Recommended Document Requests (customer-obtainable only) ── */}
-                {(ea.recommended_document_requests ?? []).filter((d: string) => !BANK_OBTAINABLE.has(d)).length > 0 && (
+                {/* ── Section 4: Recommended Document Requests — sourced from missing_documents ── */}
+                {(ea.missing_documents ?? []).filter((d: string) => !BANK_OBTAINABLE.has(d)).length > 0 && (
                   <Panel>
                     <SectionTitle>Recommended Document Requests</SectionTitle>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      {(ea.recommended_document_requests!).filter((doc: string) => !BANK_OBTAINABLE.has(doc)).map((doc: string, i: number) => (
+                      {(ea.missing_documents ?? []).filter((doc: string) => !BANK_OBTAINABLE.has(doc)).map((doc: string, i: number) => (
                         <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem", backgroundColor: "#111827", border: "1px solid #334155", borderRadius: 3 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                             <FileText style={{ width: 12, height: 12, color: "#2563EB", flexShrink: 0 }} />
