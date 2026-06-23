@@ -375,8 +375,14 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
             elif "MEDIUM" in line:
                 device_risk = "MEDIUM"
 
-    unrecognized_device = not recognized_device
-    location_mismatch = not location_consistent
+    # For CARD_POS and ATM channels, device fingerprint tool does not run.
+    # Default to False (not a fraud signal) rather than True (false positive).
+    if channel in ("CARD_POS", "ATM"):
+        unrecognized_device = False
+        location_mismatch   = False
+    else:
+        unrecognized_device = not recognized_device
+        location_mismatch   = not location_consistent
 
     # Parse Dispute Behavior
     prior_disputes = 0
@@ -480,14 +486,24 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     )
 
     # Fraud Probability calculation
-    # Signals from transaction anomaly tools
+    dispute_category = str(d.get("dispute_category") or "")
     prob = 0.0
-    if amount_anomaly:       prob += 0.20
+
+    # Category base lift — customer asserting fraud outright
+    if "unauthorized" in dispute_category.lower():
+        prob += 0.15
+
+    # Anomaly signals
+    if amount_anomaly:
+        prob += 0.25 if deviation_factor > 5.0 else 0.15
     if time_anomaly:         prob += 0.15
     if velocity_anomaly:     prob += 0.30
-    if geovelocity_breach:   prob += 0.25
-    if unrecognized_device:  prob += 0.15  # reduced — device alone is weak signal
+    if geovelocity_breach:   prob += 0.35
+    if unrecognized_device:  prob += 0.30
     if location_mismatch:    prob += 0.20
+
+    # Behavioral risk crossover
+    if behavioral_risk_score >= 0.60: prob += 0.15
 
     # Signals from customer-submitted fraud metadata (strongest indicators)
     meta = d.get("transaction_metadata") or {}
