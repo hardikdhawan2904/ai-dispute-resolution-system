@@ -47,78 +47,115 @@ def validate_node(state: FraudReasoningAgentState) -> dict:
 # ── Node 2 — build_context ────────────────────────────────────────────────────
 
 def build_context_node(state: FraudReasoningAgentState) -> dict:
-    """Run transaction anomalies, geovelocity, spend deviations, KYC matches,
-    device fingerprints, and behavioral dispute tools in parallel."""
+    """Run transaction-type-aware fraud tools in parallel based on channel routing."""
     d = state["dispute_input"]
     case_id = state["case_id"]
     meta = d.get("transaction_metadata") or {}
 
-    customer_id = d.get("customer_id", "")
-    customer_name = d.get("customer_name", "")
-    email = d.get("email", "")
-    phone = d.get("phone", "")
-    transaction_id = d.get("transaction_id", "")
+    customer_id      = d.get("customer_id", "")
+    customer_name    = d.get("customer_name", "")
+    email            = d.get("email", "")
+    phone            = d.get("phone", "")
+    transaction_id   = d.get("transaction_id", "")
     transaction_type = d.get("transaction_type", "")
-    merchant = d.get("merchant", "")
-    amount = float(d.get("amount", 0.0))
-    currency = d.get("currency", "INR")
+    merchant         = d.get("merchant", "")
+    merchant_id      = meta.get("merchant_id") or d.get("merchant_id", "")
+    amount           = float(d.get("amount", 0.0))
+    currency         = d.get("currency", "INR")
     transaction_date = d.get("transaction_date", "")
     transaction_time = d.get("transaction_time", "")
-    location = meta.get("transaction_location") or d.get("location") or ""
-    device_id = meta.get("device_id") or d.get("device_id") or ""
-    dispute_reason = d.get("dispute_reason", "")
+    location         = meta.get("transaction_location") or d.get("location") or ""
+    device_id        = meta.get("device_id") or d.get("device_id") or ""
+    dispute_reason   = d.get("dispute_reason", "")
 
-    # Pre-run tools concurrently in parallel threads
-    task_defs = {
-        "detect_transaction_anomalies": (
-            TOOL_REGISTRY["detect_transaction_anomalies"],
-            {
-                "customer_id": customer_id,
-                "transaction_time": transaction_time,
-                "transaction_date": transaction_date
-            }
-        ),
-        "evaluate_location_velocity": (
-            TOOL_REGISTRY["evaluate_location_velocity"],
-            {
-                "customer_id": customer_id,
-                "location": location,
-                "transaction_date": transaction_date,
-                "transaction_time": transaction_time
-            }
-        ),
-        "analyze_spending_behavior": (
-            TOOL_REGISTRY["analyze_spending_behavior"],
-            {
-                "customer_id": customer_id,
-                "amount": amount
-            }
-        ),
-        "verify_kyc_match": (
-            TOOL_REGISTRY["verify_kyc_match"],
-            {
-                "customer_id": customer_id,
-                "name": customer_name,
-                "email": email,
-                "phone": phone,
-                "dispute_category": d.get("dispute_category", ""),
-            }
-        ),
-        "evaluate_device_fingerprint": (
-            TOOL_REGISTRY["evaluate_device_fingerprint"],
-            {
-                "customer_id": customer_id,
-                "device_id": device_id,
-                "location": location
-            }
-        ),
-        "analyze_behavioral_patterns": (
-            TOOL_REGISTRY["analyze_behavioral_patterns"],
-            {
-                "customer_id": customer_id
-            }
-        )
-    }
+    # ── Channel routing ────────────────────────────────────────────────────────
+    _txn = transaction_type.lower().strip()
+    _DIGITAL  = {"upi", "net banking", "internet banking", "mobile banking", "imps",
+                 "neft", "rtgs", "netbanking", "online transfer"}
+    _CARD_POS = {"debit card", "credit card", "debit card pos", "credit card pos"}
+    _ATM      = {"atm", "atm cash", "atm withdrawal", "cash withdrawal"}
+
+    if _txn in _DIGITAL:
+        channel = "DIGITAL"
+    elif _txn in _CARD_POS:
+        channel = "CARD_POS"
+    elif _txn in _ATM:
+        channel = "ATM"
+    else:
+        channel = "DIGITAL"  # safe fallback — device-based checks
+
+    # ── Build tool set per channel ─────────────────────────────────────────────
+    _common_merchant = ("evaluate_merchant_risk_intelligence", {
+        "merchant_id": merchant_id,
+        "merchant_name": merchant,
+    })
+    _common_spending = ("analyze_spending_behavior", {"customer_id": customer_id, "amount": amount})
+    _common_behavior = ("analyze_behavioral_patterns", {"customer_id": customer_id})
+
+    if channel == "DIGITAL":
+        task_defs = {
+            "detect_transaction_anomalies": (
+                TOOL_REGISTRY["detect_transaction_anomalies"],
+                {"customer_id": customer_id, "transaction_time": transaction_time, "transaction_date": transaction_date}
+            ),
+            "evaluate_location_velocity": (
+                TOOL_REGISTRY["evaluate_location_velocity"],
+                {"customer_id": customer_id, "location": location, "transaction_date": transaction_date, "transaction_time": transaction_time}
+            ),
+            "analyze_spending_behavior": (TOOL_REGISTRY["analyze_spending_behavior"], _common_spending[1]),
+            "verify_kyc_match": (
+                TOOL_REGISTRY["verify_kyc_match"],
+                {"customer_id": customer_id, "name": customer_name, "email": email, "phone": phone, "dispute_category": d.get("dispute_category", "")}
+            ),
+            "evaluate_device_fingerprint": (
+                TOOL_REGISTRY["evaluate_device_fingerprint"],
+                {"customer_id": customer_id, "device_id": device_id, "location": location}
+            ),
+            "analyze_behavioral_patterns": (TOOL_REGISTRY["analyze_behavioral_patterns"], _common_behavior[1]),
+            "evaluate_merchant_risk_intelligence": (TOOL_REGISTRY["evaluate_merchant_risk_intelligence"], _common_merchant[1]),
+        }
+
+    elif channel == "CARD_POS":
+        task_defs = {
+            "analyze_spending_behavior": (TOOL_REGISTRY["analyze_spending_behavior"], _common_spending[1]),
+            "analyze_behavioral_patterns": (TOOL_REGISTRY["analyze_behavioral_patterns"], _common_behavior[1]),
+            "evaluate_merchant_risk_intelligence": (TOOL_REGISTRY["evaluate_merchant_risk_intelligence"], _common_merchant[1]),
+            "analyze_card_velocity": (
+                TOOL_REGISTRY["analyze_card_velocity"],
+                {"customer_id": customer_id, "transaction_date": transaction_date, "transaction_time": transaction_time}
+            ),
+            "evaluate_atm_pos_distance": (
+                TOOL_REGISTRY["evaluate_atm_pos_distance"],
+                {"customer_id": customer_id, "transaction_date": transaction_date, "transaction_time": transaction_time, "location": location}
+            ),
+            "analyze_foreign_usage": (
+                TOOL_REGISTRY["analyze_foreign_usage"],
+                {"customer_id": customer_id, "merchant": merchant, "location": location}
+            ),
+            "analyze_card_present_anomalies": (
+                TOOL_REGISTRY["analyze_card_present_anomalies"],
+                {"customer_id": customer_id, "merchant": merchant, "amount": amount, "transaction_time": transaction_time}
+            ),
+        }
+
+    else:  # ATM
+        task_defs = {
+            "analyze_spending_behavior": (TOOL_REGISTRY["analyze_spending_behavior"], _common_spending[1]),
+            "analyze_behavioral_patterns": (TOOL_REGISTRY["analyze_behavioral_patterns"], _common_behavior[1]),
+            "evaluate_merchant_risk_intelligence": (TOOL_REGISTRY["evaluate_merchant_risk_intelligence"], _common_merchant[1]),
+            "analyze_atm_velocity": (
+                TOOL_REGISTRY["analyze_atm_velocity"],
+                {"customer_id": customer_id, "transaction_date": transaction_date, "transaction_time": transaction_time}
+            ),
+            "evaluate_atm_geovelocity": (
+                TOOL_REGISTRY["evaluate_atm_geovelocity"],
+                {"customer_id": customer_id, "transaction_date": transaction_date, "transaction_time": transaction_time, "location": location}
+            ),
+            "analyze_cash_withdrawal_patterns": (
+                TOOL_REGISTRY["analyze_cash_withdrawal_patterns"],
+                {"customer_id": customer_id, "amount": amount}
+            ),
+        }
 
     def _run_one(name: str, tool_fn, args: dict) -> tuple:
         tok = _active_case_id.set(case_id)
@@ -131,7 +168,8 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
 
     tool_results: dict = {}
     tools_used: list = []
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    max_workers = min(len(task_defs), 8)
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = {
             ex.submit(_run_one, name, fn, args): name
             for name, (fn, args) in task_defs.items()
@@ -141,12 +179,15 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
             tool_results[name] = result
             tools_used.append(name)
 
-    # Build prompt context with tool results
+    # Build prompt context — include all tools that ran
     _TOOL_ORDER = [
         "detect_transaction_anomalies", "evaluate_location_velocity", "analyze_spending_behavior",
-        "verify_kyc_match", "evaluate_device_fingerprint", "analyze_behavioral_patterns"
+        "verify_kyc_match", "evaluate_device_fingerprint", "analyze_behavioral_patterns",
+        "evaluate_merchant_risk_intelligence",
+        "analyze_card_velocity", "evaluate_atm_pos_distance", "analyze_foreign_usage", "analyze_card_present_anomalies",
+        "analyze_atm_velocity", "evaluate_atm_geovelocity", "analyze_cash_withdrawal_patterns",
     ]
-    tool_section = "\n\n## PRE-COMPUTED TOOL RESULTS\n(All tools executed — synthesise and produce JSON now)\n"
+    tool_section = f"\n\n## PRE-COMPUTED TOOL RESULTS (Channel: {channel})\n(All tools executed — synthesise and produce JSON now)\n"
     for name in _TOOL_ORDER:
         if name in tool_results:
             tool_section += f"\n### {name}\n{tool_results[name]}\n"
@@ -173,6 +214,7 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
     return {
         "tool_results": tool_results,
         "tools_used":   tools_used,
+        "channel":      channel,
         "messages": [
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(content=human_content),
@@ -242,12 +284,25 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
 
     # ── Server-Side Deterministic Recalibrations ─────────────────────────────
     tool_results = state.get("tool_results") or {}
-    anomaly_report = str(tool_results.get("detect_transaction_anomalies", ""))
+    channel = state.get("channel", "DIGITAL")
+
+    # Core tool reports
+    anomaly_report     = str(tool_results.get("detect_transaction_anomalies", ""))
     geovelocity_report = str(tool_results.get("evaluate_location_velocity", ""))
-    spending_report = str(tool_results.get("analyze_spending_behavior", ""))
-    kyc_report = str(tool_results.get("verify_kyc_match", ""))
-    device_report = str(tool_results.get("evaluate_device_fingerprint", ""))
-    behavior_report = str(tool_results.get("analyze_behavioral_patterns", ""))
+    spending_report    = str(tool_results.get("analyze_spending_behavior", ""))
+    kyc_report         = str(tool_results.get("verify_kyc_match", ""))
+    device_report      = str(tool_results.get("evaluate_device_fingerprint", ""))
+    behavior_report    = str(tool_results.get("analyze_behavioral_patterns", ""))
+
+    # New tool reports
+    merchant_report      = str(tool_results.get("evaluate_merchant_risk_intelligence", ""))
+    card_vel_report      = str(tool_results.get("analyze_card_velocity", ""))
+    atm_pos_report       = str(tool_results.get("evaluate_atm_pos_distance", ""))
+    foreign_report       = str(tool_results.get("analyze_foreign_usage", ""))
+    card_anomaly_report  = str(tool_results.get("analyze_card_present_anomalies", ""))
+    atm_vel_report       = str(tool_results.get("analyze_atm_velocity", ""))
+    atm_geo_report       = str(tool_results.get("evaluate_atm_geovelocity", ""))
+    cash_report          = str(tool_results.get("analyze_cash_withdrawal_patterns", ""))
 
     # Parse Anomaly Flags
     amount_anomaly = False
@@ -383,6 +438,47 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     if kyc_status == "FAILED":        risk_score_calc += 0.70
     behavioral_risk_score = round(max(0.00, min(1.00, risk_score_calc)), 2)
 
+    # ── Parse new tool outputs ────────────────────────────────────────────────
+
+    # Merchant risk
+    merchant_blacklisted = False
+    merchant_risk_level = "LOW"
+    for line in merchant_report.split("\n"):
+        if "Blacklisted" in line and "Yes" in line:
+            merchant_blacklisted = True
+        if "Merchant Risk Level" in line:
+            if "CRITICAL" in line:  merchant_risk_level = "CRITICAL"
+            elif "HIGH" in line:    merchant_risk_level = "HIGH"
+            elif "MEDIUM" in line:  merchant_risk_level = "MEDIUM"
+
+    # Card POS signals
+    card_velocity_breach = any(
+        "Velocity Breach" in line and "Yes" in line
+        for line in card_vel_report.split("\n")
+    )
+    atm_pos_impossible = any(
+        "Impossible Travel" in line and "Yes" in line
+        for line in atm_pos_report.split("\n")
+    )
+    foreign_usage = any(
+        "Foreign Usage" in line and "Yes" in line
+        for line in foreign_report.split("\n")
+    )
+
+    # ATM signals
+    atm_velocity_breach = any(
+        "Velocity Breach" in line and "Yes" in line
+        for line in atm_vel_report.split("\n")
+    )
+    atm_geo_breach = any(
+        "Impossible Travel" in line and "Yes" in line
+        for line in atm_geo_report.split("\n")
+    )
+    cash_anomaly = any(
+        ("Large Withdrawal" in line or "Repeated Withdrawal" in line) and "Yes" in line
+        for line in cash_report.split("\n")
+    )
+
     # Fraud Probability calculation
     # Signals from transaction anomaly tools
     prob = 0.0
@@ -398,16 +494,31 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     def _yes(k: str) -> bool:
         return str(meta.get(k) or "").strip().lower() in {"yes", "true", "1"}
 
-    if _yes("bank_impersonation"):  prob += 0.30  # caller claimed to be bank staff
-    if _yes("remote_access"):       prob += 0.25  # AnyDesk / TeamViewer installed
-    if _yes("screen_sharing"):      prob += 0.20  # screen shared with attacker
-    if _yes("otp_shared"):          prob += 0.20  # OTP handed to fraudster
-    if _yes("sim_swap_suspected"):  prob += 0.20  # SIM takeover
-    if _yes("phishing_link"):       prob += 0.15  # clicked fake link
-    if _yes("unknown_beneficiary"): prob += 0.10  # money sent to unknown person
-    if _yes("device_lost"):         prob += 0.10  # physical device theft
-    if _yes("card_lost"):           prob += 0.10  # card physically stolen
-    if bool(d.get("fraud_selected")): prob += 0.10  # customer explicitly flagged fraud
+    if _yes("bank_impersonation"):  prob += 0.30
+    if _yes("remote_access"):       prob += 0.25
+    if _yes("screen_sharing"):      prob += 0.20
+    if _yes("otp_shared"):          prob += 0.20
+    if _yes("sim_swap_suspected"):  prob += 0.20
+    if _yes("phishing_link"):       prob += 0.15
+    if _yes("unknown_beneficiary"): prob += 0.10
+    if _yes("device_lost"):         prob += 0.10
+    if _yes("card_lost"):           prob += 0.10
+    if bool(d.get("fraud_selected")): prob += 0.10
+
+    # Merchant risk signals (all channels)
+    if merchant_blacklisted:                prob += 0.50
+    elif merchant_risk_level == "CRITICAL": prob += 0.30
+    elif merchant_risk_level == "HIGH":     prob += 0.15
+
+    # Card POS signals
+    if card_velocity_breach:  prob += 0.25
+    if atm_pos_impossible:    prob += 0.35
+    if foreign_usage:         prob += 0.30
+
+    # ATM signals
+    if atm_velocity_breach:   prob += 0.25
+    if atm_geo_breach:        prob += 0.35
+    if cash_anomaly:          prob += 0.15
 
     fraud_probability = round(max(0.00, min(1.00, prob)), 2)
 
@@ -456,6 +567,20 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
         "prior_dispute_count": prior_disputes,
         "velocity_breach_detected": velocity_breach_detected,
         "friendly_fraud_risk": friendly_fraud_risk
+    }
+    parsed["merchant_risk"] = {
+        "merchant_risk_level": merchant_risk_level,
+        "merchant_blacklisted": merchant_blacklisted,
+    }
+    parsed["channel"] = channel
+    parsed["transaction_type_detected"] = d.get("transaction_type", "")
+    parsed["tool_signals"] = {
+        "card_velocity_breach":    card_velocity_breach,
+        "atm_pos_impossible_travel": atm_pos_impossible,
+        "foreign_usage":           foreign_usage,
+        "atm_velocity_breach":     atm_velocity_breach,
+        "atm_geo_breach":          atm_geo_breach,
+        "cash_withdrawal_anomaly": cash_anomaly,
     }
 
     log_workflow_event(
@@ -528,6 +653,20 @@ def _fallback_output(
             "Trust evaluation failed — JSON parse error. Falling back to default risk settings."
         ],
         "trust_summary": "Trust brief generation failed. Standard safety review limits trust score.",
+        "merchant_risk": {
+            "merchant_risk_level": "LOW",
+            "merchant_blacklisted": False,
+        },
+        "channel": "DIGITAL",
+        "transaction_type_detected": "",
+        "tool_signals": {
+            "card_velocity_breach":    False,
+            "atm_pos_impossible_travel": False,
+            "foreign_usage":           False,
+            "atm_velocity_breach":     False,
+            "atm_geo_breach":          False,
+            "cash_withdrawal_anomaly": False,
+        },
         "tools_used":                 tools_used,
         "agent_metadata":             agent_metadata,
         "metrics":                    metrics

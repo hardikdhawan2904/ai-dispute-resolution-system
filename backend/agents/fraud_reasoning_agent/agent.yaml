@@ -44,14 +44,27 @@ agent:
     pipeline:
       entry_point: validate
 
-      # Names must exist as keys in tools.py → TOOL_REGISTRY
+      # Tools are routed by channel — not all tools run on every case.
+      # Channel routing: DIGITAL | CARD_POS | ATM (determined from transaction_type)
       agent_tools:
+        # DIGITAL channel (UPI / Net Banking / Mobile Banking / IMPS / NEFT)
         - detect_transaction_anomalies
         - evaluate_location_velocity
         - analyze_spending_behavior
         - verify_kyc_match
         - evaluate_device_fingerprint
         - analyze_behavioral_patterns
+        # All channels
+        - evaluate_merchant_risk_intelligence
+        # CARD_POS channel (Debit Card / Credit Card POS)
+        - analyze_card_velocity
+        - evaluate_atm_pos_distance
+        - analyze_foreign_usage
+        - analyze_card_present_anomalies
+        # ATM channel
+        - analyze_atm_velocity
+        - evaluate_atm_geovelocity
+        - analyze_cash_withdrawal_patterns
 
   # ── Tools ────────────────────────────────────────────────────────────────────
   tools:

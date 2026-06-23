@@ -9,7 +9,8 @@ class FraudReasoningAgentState(TypedDict):
     tool_results:        dict        # pre-computed tool results
     final_output:        dict        # parsed output for DB updates
     error:               Optional[str]
-    
+    channel:             str         # DIGITAL | CARD_POS | ATM
+
     # Audit trail
     tools_used:          List[str]
     agent_metadata:      dict

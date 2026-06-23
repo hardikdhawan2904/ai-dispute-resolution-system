@@ -640,13 +640,628 @@ def analyze_behavioral_patterns(customer_id: str) -> str:
         db.close()
 
 
+# ── Tool 7 — Merchant Risk Intelligence (all channels) ────────────────────────
+
+@tool
+def evaluate_merchant_risk_intelligence(merchant_id: str, merchant_name: str) -> str:
+    """Assess merchant risk from the bank's merchant profile database.
+    Checks blacklist status, risk tier, fraud complaint volume, and resolution rates.
+    Run for ALL transaction types."""
+    from database.database import SessionLocal
+    from database.models import MerchantProfile
+
+    db = SessionLocal()
+    try:
+        merchant = None
+        if merchant_id and merchant_id.strip():
+            merchant = db.query(MerchantProfile).filter(
+                MerchantProfile.merchant_id == merchant_id.upper()
+            ).first()
+
+        if not merchant and merchant_name and merchant_name.strip():
+            merchant = db.query(MerchantProfile).filter(
+                MerchantProfile.merchant_name.ilike(f"%{merchant_name.strip()}%")
+            ).first()
+
+        if not merchant:
+            return (
+                "MERCHANT RISK INTELLIGENCE REPORT\n"
+                f"  Merchant             : {merchant_name or merchant_id or 'Unknown'}\n"
+                "  Profile Found        : No\n"
+                "  Merchant Risk Level  : LOW\n"
+                "  Merchant Risk Score  : 0.00\n"
+                "  Assessment           : Merchant not found in bank profiles — no risk data available."
+            )
+
+        blacklisted = bool(merchant.blacklisted)
+        score = 0.0
+        reasoning = []
+
+        if blacklisted:
+            score = 1.0
+            reasoning.append("Merchant is BLACKLISTED — zero tolerance, highest risk")
+        else:
+            if merchant.risk_level == "CRITICAL":
+                score += 0.30
+                reasoning.append("Merchant risk tier: CRITICAL (+0.30)")
+            elif merchant.risk_level == "HIGH":
+                score += 0.15
+                reasoning.append("Merchant risk tier: HIGH (+0.15)")
+            elif merchant.risk_level == "MEDIUM":
+                score += 0.10
+                reasoning.append("Merchant risk tier: MEDIUM (+0.10)")
+
+            if (merchant.fraud_complaints or 0) > 5:
+                score += 0.10
+                reasoning.append(f"High fraud complaint volume: {merchant.fraud_complaints} complaints (+0.10)")
+
+            total_resolved = (merchant.resolved_customer_favor or 0) + (merchant.resolved_merchant_favor or 0)
+            if (merchant.resolved_customer_favor or 0) > 0 and total_resolved > 0:
+                cust_rate = merchant.resolved_customer_favor / total_resolved
+                if cust_rate > 0.70:
+                    score += 0.10
+                    reasoning.append(f"High customer-favor resolution rate: {cust_rate:.0%} (+0.10)")
+
+        score = round(min(1.0, max(0.0, score)), 2)
+
+        if score >= 0.50:
+            risk_level = "CRITICAL"
+        elif score >= 0.30:
+            risk_level = "HIGH"
+        elif score >= 0.10:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = "LOW"
+
+        total_res = (merchant.resolved_customer_favor or 0) + (merchant.resolved_merchant_favor or 0)
+        cust_pct = f"{merchant.resolved_customer_favor / total_res:.0%}" if total_res > 0 else "N/A"
+
+        return (
+            "MERCHANT RISK INTELLIGENCE REPORT\n"
+            f"  Merchant             : {merchant.merchant_name}\n"
+            f"  Merchant ID          : {merchant.merchant_id}\n"
+            f"  Profile Found        : Yes\n"
+            f"  Blacklisted          : {'Yes — CRITICAL ALERT' if blacklisted else 'No'}\n"
+            f"  Risk Tier            : {merchant.risk_level}\n"
+            f"  Fraud Complaints     : {merchant.fraud_complaints or 0}\n"
+            f"  Customer-Favor Rate  : {cust_pct}\n"
+            f"  Merchant Risk Score  : {score}\n"
+            f"  Merchant Risk Level  : {risk_level}\n"
+            f"  Reasoning            : {' | '.join(reasoning) if reasoning else 'No elevated risk signals'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"evaluate_merchant_risk_intelligence failed: {exc}")
+        return f"MERCHANT RISK INTELLIGENCE REPORT\n  Error: {exc}\n  Merchant Risk Level: LOW"
+    finally:
+        db.close()
+
+
+# ── Tool 8 — Card Velocity (Card POS only) ────────────────────────────────────
+
+@tool
+def analyze_card_velocity(customer_id: str, transaction_date: str, transaction_time: str) -> str:
+    """Check for card velocity abuse — multiple card transactions within a 5-minute window.
+    Use only for Debit Card / Credit Card POS transactions."""
+    from database.database import SessionLocal
+    from database.models import Transaction, DisputeCase
+
+    db = SessionLocal()
+    try:
+        exclude_id = _active_case_id.get()
+        cutoff_dt = None
+        if exclude_id:
+            curr = db.query(DisputeCase).filter(DisputeCase.case_id == exclude_id).first()
+            if curr and curr.created_at:
+                cutoff_dt = curr.created_at
+
+        now = cutoff_dt or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        time_limit = now - timedelta(days=1)
+
+        _CARD_TYPES = {"debit card", "credit card", "card", "debit", "credit"}
+        txns = [
+            t for t in db.query(Transaction).filter(
+                Transaction.customer_id == customer_id.upper(),
+                Transaction.transaction_date >= time_limit,
+                Transaction.transaction_date <= now,
+            ).all()
+            if (t.transaction_type or "").lower() in _CARD_TYPES
+        ]
+
+        count_24h = len(txns)
+        velocity_breach = False
+        window_count = 0
+
+        sorted_txns = sorted([t for t in txns if t.transaction_date], key=lambda t: t.transaction_date)
+        for i, base in enumerate(sorted_txns):
+            base_dt = base.transaction_date
+            if base_dt.tzinfo is None:
+                base_dt = base_dt.replace(tzinfo=timezone.utc)
+            in_window = 1
+            for j in range(i + 1, len(sorted_txns)):
+                other_dt = sorted_txns[j].transaction_date
+                if other_dt.tzinfo is None:
+                    other_dt = other_dt.replace(tzinfo=timezone.utc)
+                if abs((other_dt - base_dt).total_seconds()) <= 300:
+                    in_window += 1
+                else:
+                    break
+            if in_window >= 3:
+                velocity_breach = True
+                window_count = in_window
+                break
+
+        risk_level = "HIGH" if velocity_breach else "LOW"
+        assessment = (
+            f"Card velocity breach: {window_count} card transactions within 5-minute window — possible cloned card or scripted fraud."
+            if velocity_breach else
+            "Card usage frequency within normal limits."
+        )
+
+        return (
+            "CARD VELOCITY REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  24h Card Txn Count   : {count_24h}\n"
+            f"  Velocity Breach      : {'Yes — ALERT' if velocity_breach else 'No'}\n"
+            f"  Risk Level           : {risk_level}\n"
+            f"  Assessment           : {assessment}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_card_velocity failed: {exc}")
+        return f"CARD VELOCITY REPORT\n  Error: {exc}\n  Risk Level: LOW"
+    finally:
+        db.close()
+
+
+# ── Tool 9 — ATM-POS Distance (Card POS only) ────────────────────────────────
+
+@tool
+def evaluate_atm_pos_distance(customer_id: str, transaction_date: str, transaction_time: str, location: str) -> str:
+    """Check for impossible travel between ATM withdrawals and POS transactions.
+    Compares current POS location against recent ATM transactions within 1 hour.
+    Use only for Card POS transactions."""
+    from database.database import SessionLocal
+    from database.models import Transaction, DisputeCase
+
+    db = SessionLocal()
+    try:
+        if not _is_location_known(location):
+            return (
+                "ATM-POS DISTANCE REPORT\n"
+                f"  Customer ID          : {customer_id}\n"
+                "  Impossible Travel    : No\n"
+                "  Assessment           : Insufficient location data — check skipped."
+            )
+
+        try:
+            curr_dt_str = f"{transaction_date} {transaction_time}"
+            curr_dt = datetime.strptime(curr_dt_str, "%Y-%m-%d %H:%M") if len(transaction_time.split(":")) == 2 \
+                else datetime.strptime(curr_dt_str, "%Y-%m-%d %H:%M:%S")
+            curr_dt = curr_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            curr_dt = datetime.now(timezone.utc)
+
+        window_start = curr_dt - timedelta(hours=2)
+
+        _ATM_TYPES = {"atm", "atm cash", "atm withdrawal", "cash withdrawal"}
+        atm_txns = [
+            t for t in db.query(Transaction).filter(
+                Transaction.customer_id == customer_id.upper(),
+                Transaction.transaction_date >= window_start,
+                Transaction.transaction_date <= curr_dt,
+            ).all()
+            if (t.transaction_type or "").lower() in _ATM_TYPES
+        ]
+
+        impossible_travel = False
+        conflict_location = None
+        conflict_diff_mins = 0.0
+
+        for t in atm_txns:
+            if not _is_location_known(t.location):
+                continue
+            if not _same_city(location, t.location):
+                t_dt = t.transaction_date
+                if t_dt.tzinfo is None:
+                    t_dt = t_dt.replace(tzinfo=timezone.utc)
+                diff_mins = abs((curr_dt - t_dt).total_seconds()) / 60
+                if diff_mins <= 60:
+                    impossible_travel = True
+                    conflict_location = t.location
+                    conflict_diff_mins = round(diff_mins, 1)
+                    break
+
+        return (
+            "ATM-POS DISTANCE REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  Current POS Location : {location}\n"
+            f"  Impossible Travel    : {'Yes — ALERT' if impossible_travel else 'No'}\n"
+            + (f"  Conflicting ATM Loc  : {conflict_location}\n"
+               f"  Time Difference      : {conflict_diff_mins} minutes\n" if impossible_travel else "") +
+            f"  Distance Risk        : {'HIGH' if impossible_travel else 'LOW'}\n"
+            f"  Assessment           : {'Impossible physical movement between ATM and POS locations within ' + str(conflict_diff_mins) + ' minutes.' if impossible_travel else 'No impossible travel detected between ATM and POS locations.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"evaluate_atm_pos_distance failed: {exc}")
+        return f"ATM-POS DISTANCE REPORT\n  Error: {exc}\n  Distance Risk: LOW"
+    finally:
+        db.close()
+
+
+# ── Tool 10 — Foreign Usage (Card POS only) ───────────────────────────────────
+
+@tool
+def analyze_foreign_usage(customer_id: str, merchant: str, location: str) -> str:
+    """Detect if a card is being used internationally when the customer normally transacts domestically.
+    Use for Card POS transactions."""
+    from database.database import SessionLocal
+    from database.models import Transaction
+
+    db = SessionLocal()
+    try:
+        _INDIA_TOKENS = {
+            "india", "mumbai", "delhi", "bangalore", "chennai", "hyderabad",
+            "kolkata", "pune", "ahmedabad", "jaipur", "lucknow", "surat",
+            "kanpur", "nagpur", "indore", "bhopal", "patna", "vadodara",
+            "mh", "dl", "ka", "tn", "ts", "ap", "gj", "up", "rj", "wb",
+        }
+        _INTL_INDICATORS = {
+            "usa", "us", "united states", "uk", "united kingdom", "uae", "dubai",
+            "singapore", "malaysia", "thailand", "china", "japan", "germany",
+            "france", "australia", "canada", "nepal", "sri lanka", "bangladesh",
+        }
+
+        def _is_india(loc: str) -> bool:
+            if not loc:
+                return True  # assume domestic if unknown
+            loc_l = loc.lower()
+            return any(t in loc_l for t in _INDIA_TOKENS)
+
+        def _is_international(loc: str, merch: str) -> bool:
+            combined = (loc + " " + merch).lower()
+            return any(t in combined for t in _INTL_INDICATORS)
+
+        txns = db.query(Transaction).filter(
+            Transaction.customer_id == customer_id.upper()
+        ).order_by(Transaction.transaction_date.desc()).limit(50).all()
+
+        if not txns:
+            return (
+                "FOREIGN USAGE REPORT\n"
+                f"  Customer ID          : {customer_id}\n"
+                "  Foreign Usage        : No\n"
+                "  Assessment           : No transaction history to compare."
+            )
+
+        domestic_count = sum(1 for t in txns if _is_india(t.location or ""))
+        domestic_pct = domestic_count / len(txns)
+
+        current_is_intl = _is_international(location, merchant)
+        foreign_usage = domestic_pct >= 0.90 and current_is_intl
+
+        return (
+            "FOREIGN USAGE REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  Historical Domestic  : {domestic_pct:.0%} of last {len(txns)} transactions\n"
+            f"  Current Location     : {location or 'Not provided'}\n"
+            f"  Current Merchant     : {merchant}\n"
+            f"  Foreign Usage        : {'Yes — ALERT' if foreign_usage else 'No'}\n"
+            f"  Assessment           : {'Customer predominantly transacts domestically but current transaction shows international pattern.' if foreign_usage else 'No unusual geographic shift detected.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_foreign_usage failed: {exc}")
+        return f"FOREIGN USAGE REPORT\n  Error: {exc}\n  Foreign Usage: No"
+    finally:
+        db.close()
+
+
+# ── Tool 11 — Card Present Anomalies (Card POS only) ─────────────────────────
+
+@tool
+def analyze_card_present_anomalies(customer_id: str, merchant: str, amount: float, transaction_time: str) -> str:
+    """Detect anomalies in card-present (POS) transactions: unusual merchant category,
+    unusual purchase time, or unusual spend amount compared to POS history.
+    Use for Debit Card / Credit Card POS transactions."""
+    from database.database import SessionLocal
+    from database.models import Transaction
+
+    db = SessionLocal()
+    try:
+        _CARD_TYPES = {"debit card", "credit card", "card", "debit", "credit"}
+        _HIGH_RISK_MERCHANTS = {"jewellery", "jewelry", "electronics", "forex", "casino", "gaming", "gold", "diamond", "luxury"}
+
+        txns = [
+            t for t in db.query(Transaction).filter(
+                Transaction.customer_id == customer_id.upper()
+            ).order_by(Transaction.transaction_date.desc()).limit(30).all()
+            if (t.transaction_type or "").lower() in _CARD_TYPES
+        ]
+
+        avg_amount = sum(t.amount for t in txns) / len(txns) if txns else amount
+        amount_anomaly = amount > (avg_amount * 3) if avg_amount > 0 else False
+
+        time_anomaly = False
+        try:
+            hour = int(transaction_time.split(":")[0])
+            time_anomaly = hour >= 22 or hour < 6
+        except Exception:
+            pass
+
+        merchant_lower = merchant.lower()
+        merchant_anomaly = any(kw in merchant_lower for kw in _HIGH_RISK_MERCHANTS)
+
+        anomaly_count = sum([amount_anomaly, time_anomaly, merchant_anomaly])
+        anomaly_score = round(min(1.0, anomaly_count * 0.15), 2)
+
+        flags = []
+        if amount_anomaly:
+            flags.append(f"Amount {amount:,.2f} is {amount/avg_amount:.1f}x above POS average ({avg_amount:,.2f})")
+        if time_anomaly:
+            flags.append(f"Transaction at off-hours (time: {transaction_time})")
+        if merchant_anomaly:
+            flags.append(f"High-risk merchant category detected: {merchant}")
+
+        return (
+            "CARD PRESENT ANOMALY REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  Merchant             : {merchant}\n"
+            f"  Amount               : {amount:,.2f}\n"
+            f"  Avg POS Amount       : {avg_amount:,.2f}\n"
+            f"  Amount Anomaly       : {'Yes' if amount_anomaly else 'No'}\n"
+            f"  Time Anomaly         : {'Yes' if time_anomaly else 'No'}\n"
+            f"  Merchant Anomaly     : {'Yes' if merchant_anomaly else 'No'}\n"
+            f"  Anomaly Score        : {anomaly_score}\n"
+            f"  Flags                : {' | '.join(flags) if flags else 'None'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_card_present_anomalies failed: {exc}")
+        return f"CARD PRESENT ANOMALY REPORT\n  Error: {exc}\n  Anomaly Score: 0.0"
+    finally:
+        db.close()
+
+
+# ── Tool 12 — ATM Velocity (ATM only) ────────────────────────────────────────
+
+@tool
+def analyze_atm_velocity(customer_id: str, transaction_date: str, transaction_time: str) -> str:
+    """Check for multiple ATM cash withdrawals within a short time window (1 hour).
+    Use only for ATM transactions."""
+    from database.database import SessionLocal
+    from database.models import Transaction, DisputeCase
+
+    db = SessionLocal()
+    try:
+        exclude_id = _active_case_id.get()
+        cutoff_dt = None
+        if exclude_id:
+            curr = db.query(DisputeCase).filter(DisputeCase.case_id == exclude_id).first()
+            if curr and curr.created_at:
+                cutoff_dt = curr.created_at
+
+        now = cutoff_dt or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        time_limit = now - timedelta(days=1)
+
+        _ATM_TYPES = {"atm", "atm cash", "atm withdrawal", "cash withdrawal"}
+        txns = [
+            t for t in db.query(Transaction).filter(
+                Transaction.customer_id == customer_id.upper(),
+                Transaction.transaction_date >= time_limit,
+                Transaction.transaction_date <= now,
+            ).all()
+            if (t.transaction_type or "").lower() in _ATM_TYPES and t.transaction_date
+        ]
+
+        count_24h = len(txns)
+        velocity_breach = False
+        window_count = 0
+
+        sorted_txns = sorted(txns, key=lambda t: t.transaction_date)
+        for i, base in enumerate(sorted_txns):
+            base_dt = base.transaction_date
+            if base_dt.tzinfo is None:
+                base_dt = base_dt.replace(tzinfo=timezone.utc)
+            in_window = 1
+            for j in range(i + 1, len(sorted_txns)):
+                other_dt = sorted_txns[j].transaction_date
+                if other_dt.tzinfo is None:
+                    other_dt = other_dt.replace(tzinfo=timezone.utc)
+                if abs((other_dt - base_dt).total_seconds()) <= 3600:
+                    in_window += 1
+                else:
+                    break
+            if in_window >= 3:
+                velocity_breach = True
+                window_count = in_window
+                break
+
+        risk_level = "HIGH" if velocity_breach else "LOW"
+        assessment = (
+            f"ATM velocity breach: {window_count} withdrawals within 1-hour window — possible card cloning or coordinated fraud."
+            if velocity_breach else
+            "ATM withdrawal frequency within normal limits."
+        )
+
+        return (
+            "ATM VELOCITY REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  ATM Withdrawals 24h  : {count_24h}\n"
+            f"  Velocity Breach      : {'Yes — ALERT' if velocity_breach else 'No'}\n"
+            f"  Risk Level           : {risk_level}\n"
+            f"  Assessment           : {assessment}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_atm_velocity failed: {exc}")
+        return f"ATM VELOCITY REPORT\n  Error: {exc}\n  Risk Level: LOW"
+    finally:
+        db.close()
+
+
+# ── Tool 13 — ATM Geovelocity (ATM only) ─────────────────────────────────────
+
+@tool
+def evaluate_atm_geovelocity(customer_id: str, transaction_date: str, transaction_time: str, location: str) -> str:
+    """Check for ATM withdrawals at impossible geographic distances within short time windows.
+    Use only for ATM transactions."""
+    from database.database import SessionLocal
+    from database.models import Transaction, DisputeCase
+
+    db = SessionLocal()
+    try:
+        if not _is_location_known(location):
+            return (
+                "ATM GEOVELOCITY REPORT\n"
+                f"  Customer ID          : {customer_id}\n"
+                "  Impossible Travel    : No\n"
+                "  Assessment           : Insufficient location data — check skipped."
+            )
+
+        try:
+            curr_dt_str = f"{transaction_date} {transaction_time}"
+            curr_dt = datetime.strptime(curr_dt_str, "%Y-%m-%d %H:%M") if len(transaction_time.split(":")) == 2 \
+                else datetime.strptime(curr_dt_str, "%Y-%m-%d %H:%M:%S")
+            curr_dt = curr_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            curr_dt = datetime.now(timezone.utc)
+
+        window_start = curr_dt - timedelta(hours=4)
+
+        _ATM_TYPES = {"atm", "atm cash", "atm withdrawal", "cash withdrawal"}
+        atm_txns = [
+            t for t in db.query(Transaction).filter(
+                Transaction.customer_id == customer_id.upper(),
+                Transaction.transaction_date >= window_start,
+                Transaction.transaction_date <= curr_dt,
+            ).all()
+            if (t.transaction_type or "").lower() in _ATM_TYPES
+        ]
+
+        impossible_travel = False
+        conflict_location = None
+        conflict_diff_mins = 0.0
+
+        for t in atm_txns:
+            if not _is_location_known(t.location):
+                continue
+            if not _same_city(location, t.location):
+                t_dt = t.transaction_date
+                if t_dt.tzinfo is None:
+                    t_dt = t_dt.replace(tzinfo=timezone.utc)
+                diff_mins = abs((curr_dt - t_dt).total_seconds()) / 60
+                if diff_mins <= 120:
+                    impossible_travel = True
+                    conflict_location = t.location
+                    conflict_diff_mins = round(diff_mins, 1)
+                    break
+
+        return (
+            "ATM GEOVELOCITY REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  Current ATM Location : {location}\n"
+            f"  Impossible Travel    : {'Yes — ALERT' if impossible_travel else 'No'}\n"
+            + (f"  Conflict ATM Location: {conflict_location}\n"
+               f"  Time Difference      : {conflict_diff_mins} minutes\n" if impossible_travel else "") +
+            f"  ATM Geo Risk         : {'HIGH' if impossible_travel else 'LOW'}\n"
+            f"  Assessment           : {'Impossible physical movement between two ATM locations detected.' if impossible_travel else 'ATM withdrawal locations are geographically consistent.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"evaluate_atm_geovelocity failed: {exc}")
+        return f"ATM GEOVELOCITY REPORT\n  Error: {exc}\n  ATM Geo Risk: LOW"
+    finally:
+        db.close()
+
+
+# ── Tool 14 — Cash Withdrawal Patterns (ATM only) ────────────────────────────
+
+@tool
+def analyze_cash_withdrawal_patterns(customer_id: str, amount: float) -> str:
+    """Analyze cash withdrawal patterns against customer's ATM withdrawal history.
+    Flags unusually large or repeated withdrawals.
+    Use only for ATM transactions."""
+    from database.database import SessionLocal
+    from database.models import Transaction, DisputeCase
+
+    db = SessionLocal()
+    try:
+        _ATM_TYPES = {"atm", "atm cash", "atm withdrawal", "cash withdrawal"}
+        hist_txns = [
+            t for t in db.query(Transaction).filter(
+                Transaction.customer_id == customer_id.upper()
+            ).order_by(Transaction.transaction_date.desc()).limit(30).all()
+            if (t.transaction_type or "").lower() in _ATM_TYPES
+        ]
+
+        avg_withdrawal = sum(t.amount for t in hist_txns) / len(hist_txns) if hist_txns else amount
+        large_withdrawal = amount > (avg_withdrawal * 3) if avg_withdrawal > 0 else False
+
+        exclude_id = _active_case_id.get()
+        cutoff_dt = None
+        if exclude_id:
+            curr = db.query(DisputeCase).filter(DisputeCase.case_id == exclude_id).first()
+            if curr and curr.created_at:
+                cutoff_dt = curr.created_at
+
+        now = cutoff_dt or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        day_limit = now - timedelta(days=1)
+
+        recent_atm = [
+            t for t in db.query(Transaction).filter(
+                Transaction.customer_id == customer_id.upper(),
+                Transaction.transaction_date >= day_limit,
+                Transaction.transaction_date <= now,
+            ).all()
+            if (t.transaction_type or "").lower() in _ATM_TYPES
+        ]
+        repeated_withdrawal = len(recent_atm) >= 3
+
+        risk = "HIGH" if (large_withdrawal and repeated_withdrawal) else "MEDIUM" if (large_withdrawal or repeated_withdrawal) else "LOW"
+        flags = []
+        if large_withdrawal:
+            flags.append(f"Amount {amount:,.2f} is {amount/avg_withdrawal:.1f}x above ATM average ({avg_withdrawal:,.2f})")
+        if repeated_withdrawal:
+            flags.append(f"{len(recent_atm)} ATM withdrawals in last 24h")
+
+        return (
+            "CASH WITHDRAWAL PATTERN REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  This Withdrawal      : {amount:,.2f}\n"
+            f"  Avg ATM Withdrawal   : {avg_withdrawal:,.2f}\n"
+            f"  Large Withdrawal     : {'Yes — ALERT' if large_withdrawal else 'No'}\n"
+            f"  Repeated Withdrawal  : {'Yes — ALERT' if repeated_withdrawal else 'No'}\n"
+            f"  ATM Count 24h        : {len(recent_atm)}\n"
+            f"  Risk Level           : {risk}\n"
+            f"  Flags                : {' | '.join(flags) if flags else 'None'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_cash_withdrawal_patterns failed: {exc}")
+        return f"CASH WITHDRAWAL PATTERN REPORT\n  Error: {exc}\n  Risk Level: LOW"
+    finally:
+        db.close()
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: dict = {
-    "detect_transaction_anomalies": detect_transaction_anomalies,
-    "evaluate_location_velocity":    evaluate_location_velocity,
-    "analyze_spending_behavior":     analyze_spending_behavior,
-    "verify_kyc_match":             verify_kyc_match,
-    "evaluate_device_fingerprint":  evaluate_device_fingerprint,
-    "analyze_behavioral_patterns":  analyze_behavioral_patterns,
+    # Core tools — used by digital channel
+    "detect_transaction_anomalies":       detect_transaction_anomalies,
+    "evaluate_location_velocity":         evaluate_location_velocity,
+    "analyze_spending_behavior":          analyze_spending_behavior,
+    "verify_kyc_match":                   verify_kyc_match,
+    "evaluate_device_fingerprint":        evaluate_device_fingerprint,
+    "analyze_behavioral_patterns":        analyze_behavioral_patterns,
+    # All channels
+    "evaluate_merchant_risk_intelligence": evaluate_merchant_risk_intelligence,
+    # Card POS channel
+    "analyze_card_velocity":              analyze_card_velocity,
+    "evaluate_atm_pos_distance":          evaluate_atm_pos_distance,
+    "analyze_foreign_usage":              analyze_foreign_usage,
+    "analyze_card_present_anomalies":     analyze_card_present_anomalies,
+    # ATM channel
+    "analyze_atm_velocity":               analyze_atm_velocity,
+    "evaluate_atm_geovelocity":           evaluate_atm_geovelocity,
+    "analyze_cash_withdrawal_patterns":   analyze_cash_withdrawal_patterns,
 }

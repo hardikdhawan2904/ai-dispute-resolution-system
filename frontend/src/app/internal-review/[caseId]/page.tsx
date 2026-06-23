@@ -583,9 +583,24 @@ export default function CaseWorkspace() {
             const idBg          = idStatus === "VERIFIED" ? "rgba(74,222,128,0.1)" : idStatus === "SUSPICIOUS" ? "rgba(252,211,77,0.1)" : "rgba(252,165,165,0.1)";
             const idBorder      = idStatus === "VERIFIED" ? "rgba(74,222,128,0.3)" : idStatus === "SUSPICIOUS" ? "rgba(252,211,77,0.3)" : "rgba(252,165,165,0.3)";
 
-            const kycData    = (td as any).kyc_checks    ?? (fd as any).kyc_checks    ?? {};
-            const devData    = (td as any).device_fingerprint ?? (fd as any).device_fingerprint ?? {};
-            const behavData  = (td as any).dispute_behavior   ?? (fd as any).dispute_behavior   ?? {};
+            const kycData      = (td as any).kyc_checks        ?? (fd as any).kyc_checks        ?? {};
+            const devData      = (td as any).device_fingerprint ?? (fd as any).device_fingerprint ?? {};
+            const behavData    = (td as any).dispute_behavior   ?? (fd as any).dispute_behavior   ?? {};
+            const merchantRisk = (fd as any).merchant_risk      ?? {};
+            const toolSignals  = (fd as any).tool_signals       ?? {};
+            const channel      = (fd as any).channel            ?? "DIGITAL";
+
+            const txnTypeLower = (caseData.transaction_type || "").toLowerCase();
+            const isDigital    = ["upi","net banking","internet banking","mobile banking","imps","neft","rtgs"].some(t => txnTypeLower.includes(t));
+            const isCardPOS    = ["debit card","credit card"].some(t => txnTypeLower.includes(t)) && !txnTypeLower.includes("atm");
+            const isATM        = txnTypeLower.includes("atm") || txnTypeLower.includes("cash withdrawal");
+
+            const channelLabel = isCardPOS ? "Card POS" : isATM ? "ATM" : "UPI / Mobile / Internet";
+            const channelColor = isCardPOS ? "#7C3AED" : isATM ? "#D97706" : "#2563EB";
+            const channelBg    = isCardPOS ? "rgba(124,58,237,0.1)" : isATM ? "rgba(217,119,6,0.1)" : "rgba(37,99,235,0.1)";
+
+            const mrLevel = merchantRisk.merchant_risk_level ?? "LOW";
+            const mrColor = mrLevel === "CRITICAL" ? "#EF4444" : mrLevel === "HIGH" ? "#F97316" : mrLevel === "MEDIUM" ? "#FBBF24" : "#10B981";
 
             return (
               <div className="flex flex-col gap-3.5">
@@ -593,7 +608,12 @@ export default function CaseWorkspace() {
                 {/* ── Header: Fraud Summary ─────────────────────────────── */}
                 <Panel style={{ borderLeft: `4px solid ${riskColor}`, padding: "1.25rem" }}>
                   <div className="flex justify-between items-start flex-wrap gap-4 mb-3">
-                    <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#F8FAFC", margin: 0 }}>Fraud Review</h3>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
+                      <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#F8FAFC", margin: 0 }}>Fraud Review</h3>
+                      <span style={{ fontSize: "0.6rem", fontWeight: 700, padding: "0.2rem 0.6rem", borderRadius: 20, backgroundColor: channelBg, color: channelColor, border: `1px solid ${channelColor}40` }}>
+                        {channelLabel}
+                      </span>
+                    </div>
                     <div className="flex items-center gap-2">
                       {caseData.requires_manual_review ? (
                         <div style={{ backgroundColor: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)" }} className="flex items-center gap-1.5 px-3 py-1.5 rounded">
@@ -659,6 +679,83 @@ export default function CaseWorkspace() {
                   </Panel>
                 </div>
 
+                {/* ── Merchant Risk (all channels) ─────────────────────── */}
+                <Panel>
+                  <SectionTitle>Merchant Risk Intelligence</SectionTitle>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.875rem" }}>
+                    <div>
+                      <Label>Merchant Risk Level</Label>
+                      <span style={{ fontSize: "0.72rem", fontWeight: 700, padding: "0.2rem 0.6rem", borderRadius: 3,
+                        backgroundColor: `${mrColor}18`, color: mrColor, border: `1px solid ${mrColor}40` }}>
+                        {mrLevel}
+                      </span>
+                    </div>
+                    <div>
+                      <Label>Blacklisted</Label>
+                      <span style={{ fontSize: "0.72rem", fontWeight: 700, color: merchantRisk.merchant_blacklisted ? "#EF4444" : "#4ADE80" }}>
+                        {merchantRisk.merchant_blacklisted ? "YES — BLOCKED" : "No"}
+                      </span>
+                    </div>
+                    <div>
+                      <Label>Data Source</Label>
+                      <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>Bank Merchant Profiles</span>
+                    </div>
+                  </div>
+                </Panel>
+
+                {/* ── Channel-specific signal cards ────────────────────── */}
+                {isCardPOS && (
+                  <Panel>
+                    <SectionTitle>Card POS Signals</SectionTitle>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.875rem" }}>
+                      {[
+                        { label: "Card Velocity Breach", flag: toolSignals.card_velocity_breach, desc: "3+ transactions in 5 min" },
+                        { label: "ATM-POS Impossible Travel", flag: toolSignals.atm_pos_impossible_travel, desc: "Different city ATM + POS within 1h" },
+                        { label: "Foreign Card Usage", flag: toolSignals.foreign_usage, desc: "International use on domestic card" },
+                      ].map(({ label, flag, desc }) => (
+                        <div key={label} style={{ padding: "0.625rem", backgroundColor: flag ? "rgba(239,68,68,0.07)" : "#0F172A", border: `1px solid ${flag ? "rgba(239,68,68,0.3)" : "#334155"}`, borderRadius: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: 4 }}>
+                            {flag
+                              ? <AlertTriangle style={{ width: 12, height: 12, color: "#EF4444" }} />
+                              : <CheckCircle style={{ width: 12, height: 12, color: "#4ADE80" }} />}
+                            <span style={{ fontSize: "0.68rem", fontWeight: 600, color: flag ? "#FCA5A5" : "#4ADE80" }}>
+                              {flag ? "ALERT" : "Clear"}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "0.7rem", color: "#F8FAFC", fontWeight: 500 }}>{label}</div>
+                          <div style={{ fontSize: "0.62rem", color: "#64748B", marginTop: 2 }}>{desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </Panel>
+                )}
+
+                {isATM && (
+                  <Panel>
+                    <SectionTitle>ATM Signals</SectionTitle>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.875rem" }}>
+                      {[
+                        { label: "ATM Velocity Breach", flag: toolSignals.atm_velocity_breach, desc: "3+ withdrawals in 1 hour" },
+                        { label: "ATM Geovelocity Breach", flag: toolSignals.atm_geo_breach, desc: "Impossible ATM-to-ATM travel" },
+                        { label: "Cash Withdrawal Anomaly", flag: toolSignals.cash_withdrawal_anomaly, desc: "Unusually large or repeated" },
+                      ].map(({ label, flag, desc }) => (
+                        <div key={label} style={{ padding: "0.625rem", backgroundColor: flag ? "rgba(239,68,68,0.07)" : "#0F172A", border: `1px solid ${flag ? "rgba(239,68,68,0.3)" : "#334155"}`, borderRadius: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: 4 }}>
+                            {flag
+                              ? <AlertTriangle style={{ width: 12, height: 12, color: "#EF4444" }} />
+                              : <CheckCircle style={{ width: 12, height: 12, color: "#4ADE80" }} />}
+                            <span style={{ fontSize: "0.68rem", fontWeight: 600, color: flag ? "#FCA5A5" : "#4ADE80" }}>
+                              {flag ? "ALERT" : "Clear"}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "0.7rem", color: "#F8FAFC", fontWeight: 500 }}>{label}</div>
+                          <div style={{ fontSize: "0.62rem", color: "#64748B", marginTop: 2 }}>{desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </Panel>
+                )}
+
                 {/* ── Identity Verification + Device + Behavioral ───────── */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.875rem" }}>
 
@@ -690,8 +787,8 @@ export default function CaseWorkspace() {
                     </div>
                   </Panel>
 
-                  {/* Device Fingerprint + Location */}
-                  <Panel>
+                  {/* Device Fingerprint + Location — only relevant for digital channels */}
+                  {(isDigital || (!isCardPOS && !isATM)) && <Panel>
                     <SectionTitle>Device &amp; Location</SectionTitle>
                     <div style={{ display: "flex", flexDirection: "column" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 0", borderBottom: "1px solid #1E293B" }}>
@@ -730,7 +827,7 @@ export default function CaseWorkspace() {
                         </span>
                       </div>
                     </div>
-                  </Panel>
+                  </Panel>}
 
                   {/* Behavioral Analysis */}
                   <Panel>

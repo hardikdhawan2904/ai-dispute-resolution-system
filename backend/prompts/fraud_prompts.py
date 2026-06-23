@@ -53,6 +53,21 @@ Fraud Probability (0.0 to 1.0):
 - Add +0.20 if location mismatch or anomalous merchant category is detected
 - Add +0.20 if KYC Compromise Risk is HIGH (full KYC match in Unauthorized Transaction dispute — fraudster likely has device/email access, identity cannot be confirmed by data alone)
 - Add +0.15 if behavioral_risk_score is >= 0.60 (high repeat-disputer or friendly-fraud history crosses into fraud probability)
+
+Merchant Risk Signals (all transaction types):
+- Add +0.50 if merchant is BLACKLISTED
+- Add +0.30 if merchant risk level is CRITICAL
+- Add +0.15 if merchant risk level is HIGH
+
+Card POS Signals (Debit Card / Credit Card only):
+- Add +0.25 if card velocity breach detected (3+ transactions in 5-minute window)
+- Add +0.35 if ATM-POS impossible travel detected (different city ATM and POS within 1 hour)
+- Add +0.30 if foreign card usage detected (customer predominantly transacts in India but card used internationally)
+
+ATM Signals (ATM / Cash Withdrawal only):
+- Add +0.25 if ATM velocity breach detected (3+ ATM withdrawals in 1-hour window)
+- Add +0.35 if ATM geovelocity breach detected (impossible travel between ATM locations)
+- Add +0.15 if cash withdrawal pattern anomaly detected (unusually large or repeated withdrawals)
 - Clamp score to [0.00, 1.00]
 
 Fraud Risk Level:
