@@ -19,6 +19,8 @@ class CreateDocumentRequestBody(BaseModel):
     document_type: str = Field(..., min_length=2, max_length=256)
     description: Optional[str] = None
     due_date: Optional[datetime] = None
+    notify: bool = True
+    notify_docs: Optional[List[str]] = None  # exact list to show in email
 
 
 # ── Case Lock ─────────────────────────────────────────────────────────────────

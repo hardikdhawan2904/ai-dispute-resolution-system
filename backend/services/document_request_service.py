@@ -14,6 +14,8 @@ def create_request(
     description: str,
     due_date: Optional[datetime],
     db: Session,
+    notify: bool = True,
+    notify_docs: Optional[List[str]] = None,
 ) -> Optional[dict]:
     case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id).first()
     if not case:
@@ -69,22 +71,23 @@ def create_request(
     db.commit()
     db.refresh(dr)
 
-    # Trigger DOCUMENT_REQUESTED email listing all unfulfilled docs for this case
-    try:
-        from services.communication_service import trigger_communication_async
-        pending_docs = [
-            r.document_type
-            for r in db.query(DocumentRequest)
-            .filter(DocumentRequest.case_id == case_id, DocumentRequest.fulfilled == False)
-            .all()
-        ]
-        trigger_communication_async(
-            case_id=case_id,
-            notification_type="DOCUMENT_REQUESTED",
-            context={"requested_documents": pending_docs, "_skip_dedup": True},
-        )
-    except Exception:
-        pass
+    # Trigger email only when notify=True; use notify_docs list if provided
+    if notify:
+        try:
+            from services.communication_service import trigger_communication_async
+            docs_to_list = notify_docs or [
+                r.document_type
+                for r in db.query(DocumentRequest)
+                .filter(DocumentRequest.case_id == case_id, DocumentRequest.fulfilled == False)
+                .all()
+            ]
+            trigger_communication_async(
+                case_id=case_id,
+                notification_type="DOCUMENT_REQUESTED",
+                context={"requested_documents": docs_to_list, "_skip_dedup": True},
+            )
+        except Exception:
+            pass
 
     return dr.to_dict()
 

@@ -1550,9 +1550,12 @@ export default function CaseWorkspace() {
                             setCreatingDocs(true);
                             try {
                               const docsToRequest = customerDocs.filter((d: string) => selectedDocs.has(d));
+                              // Create all requests silently (notify=false), then send ONE email
                               for (const doc of docsToRequest) {
-                                await createDocumentRequest(caseData.case_id, "system", doc, "Required for evidence review", undefined);
+                                await createDocumentRequest(caseData.case_id, "system", doc, "Required for evidence review", undefined, false, docsToRequest);
                               }
+                              // Send one consolidated email listing exactly the selected docs
+                              await sendCommunication(caseData.case_id, "DOCUMENT_REQUESTED", { requested_documents: docsToRequest, _skip_dedup: true });
                               setSelectedDocs(new Set());
                               toast.success(`Document request sent for ${docsToRequest.length} document${docsToRequest.length > 1 ? "s" : ""}`);
                             } catch {

@@ -71,6 +71,7 @@ def create_document_request(case_id: str, body: CreateDocumentRequestBody, db: S
     result = document_request_service.create_request(
         case_id, body.requested_by, body.document_type,
         body.description or "", body.due_date, db,
+        notify=body.notify, notify_docs=body.notify_docs,
     )
     if result is None:
         raise HTTPException(status_code=404, detail=f"Case {case_id} not found")

@@ -178,12 +178,16 @@ export async function createDocumentRequest(
   documentType: string,
   description?: string,
   dueDate?: string,
+  notify: boolean = true,
+  notifyDocs?: string[],
 ): Promise<DocumentRequest> {
   const res = await api.post<DocumentRequest>(`/api/ops/cases/${caseId}/document-requests`, {
     requested_by: requestedBy,
     document_type: documentType,
     description,
     due_date: dueDate,
+    notify,
+    notify_docs: notifyDocs,
   });
   return res.data;
 }
