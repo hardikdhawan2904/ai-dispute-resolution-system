@@ -1665,10 +1665,14 @@ export default function CaseWorkspace() {
                   <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#F8FAFC" }}>Customer Communications</div>
                   <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>All notifications sent to the customer for this case.</div>
                 </div>
-                <button
-                  onClick={async () => {
+                <select
+                  defaultValue=""
+                  onChange={async (e) => {
+                    const type = e.target.value;
+                    if (!type) return;
+                    e.target.value = "";
                     try {
-                      await sendCommunication(caseId!, "CASE_RECEIVED");
+                      await sendCommunication(caseId!, type);
                       const res = await getCommunications(caseId!);
                       setCommunications(res.communications || []);
                       toast.success("Communication sent");
@@ -1676,8 +1680,16 @@ export default function CaseWorkspace() {
                   }}
                   style={{ fontSize: "0.7rem", padding: "0.35rem 0.75rem", backgroundColor: "#1E3A5F", color: "#93C5FD", border: "1px solid #2563EB", borderRadius: 4, cursor: "pointer" }}
                 >
-                  + Send Update
-                </button>
+                  <option value="" disabled>+ Send Update</option>
+                  <option value="CASE_RECEIVED">Dispute Received</option>
+                  <option value="INVESTIGATION_STARTED">Investigation Started</option>
+                  <option value="DOCUMENT_REQUESTED">Documents Required</option>
+                  <option value="FRAUD_REVIEW_STARTED">Verification In Progress</option>
+                  <option value="EVIDENCE_REVIEW_COMPLETED">Document Review Completed</option>
+                  <option value="DOCUMENTS_RECEIVED">Documents Received</option>
+                  <option value="CASE_RESOLVED">Case Resolved</option>
+                  <option value="STATUS_CHANGED">Status Update</option>
+                </select>
               </div>
 
               {communications.length === 0 ? (
