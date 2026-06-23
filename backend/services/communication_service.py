@@ -61,6 +61,22 @@ def trigger_communication(
                 )
                 return None
 
+        # For DOCUMENT_REQUESTED: always use all currently pending DB requests
+        # so email always matches what customer sees on tracking page
+        if notification_type == "DOCUMENT_REQUESTED":
+            from database.models import DocumentRequest
+            ctx = dict(context or {})
+            pending = [
+                r.document_type
+                for r in db.query(DocumentRequest)
+                .filter(DocumentRequest.case_id == case_id, DocumentRequest.fulfilled == False)
+                .order_by(DocumentRequest.created_at)
+                .all()
+            ]
+            if pending:
+                ctx["requested_documents"] = pending
+            context = ctx
+
         # Build customer-safe subset — no fraud scores, risk signals, or internal details
         case_data = {
             "case_id":          case.case_id,
