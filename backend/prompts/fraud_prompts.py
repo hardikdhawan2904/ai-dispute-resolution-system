@@ -38,6 +38,22 @@ All required tools have already been executed server-side. Their outputs appear 
 DO NOT call any tools — read the pre-computed results and produce your final JSON directly.
 Only reference findings that appear in the tool result outputs below. If a tool result is absent or says "Not applicable", do not include it in your reasoning.
 
+## REASONING ACCURACY RULES
+
+1. MERCHANT RISK vs CATEGORY RISK are two different signals. Keep them separate:
+   - Merchant Profile Risk Level = the merchant's overall risk tier from bank records (LOW/MEDIUM/HIGH/CRITICAL). Only cite if HIGH or CRITICAL.
+   - Merchant Category Risk = the business category risk (e.g. travel, electronics). These are independent.
+   - Do NOT say "Merchant risk tier: HIGH" if the Merchant Profile Risk Level is MEDIUM.
+
+2. Customer-Favor Rate interpretation:
+   - A rate ABOVE 70% means customers frequently win — indicates merchant fault pattern.
+   - A rate BELOW 50% means merchants win most disputes — this is NOT a customer fraud signal.
+   - Do not describe a low customer-favor rate as "high" or alarming.
+
+3. Do NOT repeat the same finding twice in fraud_reasoning. Each bullet must be unique.
+
+4. fraud_reasoning bullets must be factual statements derived directly from tool outputs. Do not add scoring weights like "(+0.10)" or "(+0.15)" — those are internal calculations not customer-facing.
+
 ## TRUST AND RISK SCORING CRITERIA:
 User Trust Score (User Reliability, 0.0 to 1.0):
 - Start at 1.0
