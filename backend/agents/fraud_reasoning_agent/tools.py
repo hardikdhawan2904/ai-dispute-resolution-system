@@ -593,12 +593,15 @@ def analyze_behavioral_patterns(customer_id: str) -> str:
                 "  Assessment           : Clean account with no history of disputes."
             )
 
-        # Check velocity: disputes filed in last 30 days
+        # Check velocity: deduplicate by case_id before counting (live + history can overlap)
+        seen_ids: set = set()
         all_dates = []
-        for c in hist_cases:
-            if c.created_at:
-                all_dates.append(c.created_at.replace(tzinfo=timezone.utc) if c.created_at.tzinfo is None else c.created_at)
-        for c in live_cases:
+        for c in hist_cases + live_cases:
+            cid_key = getattr(c, "case_id", None)
+            if cid_key and cid_key in seen_ids:
+                continue
+            if cid_key:
+                seen_ids.add(cid_key)
             if c.created_at:
                 all_dates.append(c.created_at.replace(tzinfo=timezone.utc) if c.created_at.tzinfo is None else c.created_at)
 
