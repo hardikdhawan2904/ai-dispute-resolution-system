@@ -12,7 +12,7 @@ const config: Config = {
       colors: {
         ops: {
           // Primary backgrounds
-          bg:          "#162032",
+          bg:          "#1A2744",
           surface:     "#1E293B",
           panel:       "#111827",
           overlay:     "#0B1120",
@@ -42,7 +42,7 @@ const config: Config = {
         },
         // Legacy aliases — keep existing code working
         bfsi: {
-          black:      "#162032",
+          black:      "#1A2744",
           navy:       "#0B1120",
           dark:       "#111827",
           card:       "#1E293B",
