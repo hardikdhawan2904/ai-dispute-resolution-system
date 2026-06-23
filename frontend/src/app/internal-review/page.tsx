@@ -94,12 +94,12 @@ export default function InternalReviewPage() {
   const hasFilter = !!(filterPriority || filterStatus || fraudOnly || search);
   const clearAll = () => { setFilterPriority(""); setFilterStatus(""); setFraudOnly(false); setSearch(""); };
 
-  // Derived stats
-  const openCount    = cases.filter(c => ["Dispute Raised","Under Investigation","Pending Documents","Escalated"].includes(c.status)).length;
-  const fraudCount   = cases.filter(c => c.fraud_suspicion).length;
-  const critCount    = cases.filter(c => c.priority === "CRITICAL").length;
-  const pendingDocs  = cases.filter(c => c.status === "Pending Documents").length;
-  const resolvedCount= cases.filter(c => c.status === "Resolved").length;
+  // Derived stats — mutually exclusive by status, always sum to total
+  const disputeRaised    = cases.filter(c => c.status === "Dispute Raised").length;
+  const underInvestigation = cases.filter(c => c.status === "Under Investigation").length;
+  const pendingDocs      = cases.filter(c => c.status === "Pending Documents").length;
+  const escalatedCount   = cases.filter(c => c.status === "Escalated").length;
+  const resolvedCount    = cases.filter(c => ["Resolved","Rejected","Closed"].includes(c.status)).length;
 
   // Agent 4 — EIA evidence metrics (derived from loaded cases)
   const evidencePending = cases.filter(c => {
@@ -164,45 +164,21 @@ export default function InternalReviewPage() {
         </div>
       </div>
 
-      {/* Metrics strip */}
-      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", alignItems: "stretch" }}>
-
-        {/* Total Cases — hero card */}
-        <div style={{
-          backgroundColor: "#1E3A5F", border: "1px solid #2563EB",
-          borderRadius: 6, padding: "1rem 1.5rem",
-          display: "flex", flexDirection: "column", justifyContent: "center",
-          minWidth: 130, flexShrink: 0,
-        }}>
-          <div style={{ fontSize: "2rem", fontWeight: 800, color: "#F8FAFC", letterSpacing: "-0.03em", lineHeight: 1 }}>{total}</div>
-          <div style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#93C5FD", marginTop: 6 }}>Total Cases</div>
-        </div>
-
-        {/* Sub-stats with progress bars */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "0.75rem", flex: 1 }}>
-          {[
-            { label: "Open",              value: openCount,     color: "#60A5FA", bg: "rgba(96,165,250,0.08)",  border: "rgba(96,165,250,0.25)" },
-            { label: "Fraud Review",      value: fraudCount,    color: "#F87171", bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.25)" },
-            { label: "Critical Priority", value: critCount,     color: "#FB923C", bg: "rgba(251,146,60,0.08)",  border: "rgba(251,146,60,0.25)" },
-            { label: "Pending Docs",      value: pendingDocs,   color: "#FBBF24", bg: "rgba(251,191,36,0.08)",  border: "rgba(251,191,36,0.25)" },
-            { label: "Resolved",          value: resolvedCount, color: "#4ADE80", bg: "rgba(74,222,128,0.08)",  border: "rgba(74,222,128,0.25)" },
-          ].map(({ label, value, color, bg, border }) => {
-            const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-            return (
-              <div key={label} style={{ backgroundColor: bg, border: `1px solid ${border}`, borderRadius: 6, padding: "0.75rem 1rem" }}>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
-                  <div style={{ fontSize: "1.4rem", fontWeight: 800, color, letterSpacing: "-0.02em", lineHeight: 1 }}>{value}</div>
-                  <div style={{ fontSize: "0.65rem", fontWeight: 600, color, opacity: 0.7 }}>{pct}%</div>
-                </div>
-                {/* Progress bar */}
-                <div style={{ height: 3, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 2, marginBottom: 6, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${pct}%`, backgroundColor: color, borderRadius: 2, transition: "width 0.4s" }} />
-                </div>
-                <div style={{ fontSize: "0.58rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "rgba(255,255,255,0.4)" }}>{label}</div>
-              </div>
-            );
-          })}
-        </div>
+      {/* Metrics strip — mutually exclusive by status, always sums to Total */}
+      <div style={S.metricRow}>
+        {[
+          { label: "Total Cases",          value: total,              color: "#F8FAFC" },
+          { label: "Dispute Raised",       value: disputeRaised,      color: "#60A5FA" },
+          { label: "Under Investigation",  value: underInvestigation, color: "#A78BFA" },
+          { label: "Pending Documents",    value: pendingDocs,        color: "#FCD34D" },
+          { label: "Escalated",            value: escalatedCount,     color: "#FB923C" },
+          { label: "Resolved / Closed",    value: resolvedCount,      color: "#4ADE80" },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 4, padding: "0.75rem 1rem" }}>
+            <div style={{ fontSize: "1.25rem", fontWeight: 700, color, letterSpacing: "-0.02em" }}>{value}</div>
+            <div style={{ fontSize: "0.6rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748B", marginTop: 3 }}>{label}</div>
+          </div>
+        ))}
       </div>
 
       {/* Evidence metrics strip — only shown when any evidence data exists */}
