@@ -146,6 +146,19 @@ CUSTOMER PROFILE & INTAKE DETAILS:
   Transaction Time : {transaction_time}
   Dispute Reason   : {dispute_reason}
 
+CUSTOMER-REPORTED FRAUD SIGNALS:
+  OTP Received               : {otp_received}
+  OTP Shared with Third Party: {otp_shared}
+  Bank Impersonation Call    : {bank_impersonation}
+  Remote Access App Installed: {remote_access}
+  Screen Sharing Active      : {screen_sharing}
+  SIM Swap Suspected         : {sim_swap_suspected}
+  Unknown Beneficiary        : {unknown_beneficiary}
+  Phishing Link Clicked      : {phishing_link}
+  Card Lost or Stolen        : {card_lost}
+  Device Lost or Stolen      : {device_lost}
+  Customer Flagged Fraud     : {fraud_selected}
+{fraud_additional_section}
 ==============================================
 Case ID    : {case_id}
 Created At : {created_at}

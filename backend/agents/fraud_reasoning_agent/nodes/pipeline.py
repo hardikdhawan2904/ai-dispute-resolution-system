@@ -250,6 +250,13 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
         if name in tool_results:
             tool_section += f"\n### {name}\n{tool_results[name]}\n"
 
+    def _flag(key: str) -> str:
+        val = str(meta.get(key) or d.get(key) or "").strip().lower()
+        return "Yes" if val in {"yes", "true", "1"} else "No"
+
+    _extra = (meta.get("fraud_additional_details") or d.get("fraud_additional_details") or "").strip()
+    _fraud_additional_section = f"\nCUSTOMER FRAUD NARRATIVE:\n  {_extra}\n" if _extra else ""
+
     human_content = FRAUD_DATA_TEMPLATE.format(
         customer_name    = mask_name(customer_name),
         customer_id      = mask_id(customer_id),
@@ -265,6 +272,18 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
         transaction_date = transaction_date,
         transaction_time = transaction_time,
         dispute_reason   = dispute_reason,
+        otp_received          = _flag("otp_received"),
+        otp_shared            = _flag("otp_shared"),
+        bank_impersonation    = _flag("bank_impersonation"),
+        remote_access         = _flag("remote_access"),
+        screen_sharing        = _flag("screen_sharing"),
+        sim_swap_suspected    = _flag("sim_swap_suspected"),
+        unknown_beneficiary   = _flag("unknown_beneficiary"),
+        phishing_link         = _flag("phishing_link"),
+        card_lost             = _flag("card_lost"),
+        device_lost           = _flag("device_lost"),
+        fraud_selected        = "Yes" if d.get("fraud_selected") else "No",
+        fraud_additional_section = _fraud_additional_section,
         case_id          = mask_id(case_id),
         created_at       = utc_now_iso(),
     ) + tool_section
