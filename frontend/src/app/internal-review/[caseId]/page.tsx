@@ -1665,44 +1665,30 @@ export default function CaseWorkspace() {
                   <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#F8FAFC" }}>Customer Communications</div>
                   <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>All notifications sent to the customer for this case.</div>
                 </div>
-                {(() => {
-                  const st  = caseData?.status || "";
-                  const isPostIntake    = ["Under Investigation","Pending Documents","Escalated","Resolved","Rejected","Closed"].includes(st);
-                  const isDocsPending   = st === "Pending Documents";
-                  const hasFraud        = !!caseData?.fraud_suspicion;
-                  const hasEvidence     = !!caseData?.evidence_assessment;
-                  const isTerminal      = ["Resolved","Rejected","Closed"].includes(st);
-                  const opts: { value: string; label: string }[] = [
-                    { value: "CASE_RECEIVED",          label: "Dispute Received" },
-                    ...(isPostIntake ? [{ value: "INVESTIGATION_STARTED", label: "Investigation Started" }] : []),
-                    ...(isDocsPending ? [{ value: "DOCUMENT_REQUESTED",   label: "Documents Required" }]   : []),
-                    ...(hasFraud      ? [{ value: "FRAUD_REVIEW_STARTED", label: "Verification In Progress" }] : []),
-                    ...(hasEvidence   ? [{ value: "EVIDENCE_REVIEW_COMPLETED", label: "Document Review Completed" }] : []),
-                    { value: "DOCUMENTS_RECEIVED", label: "Documents Received" },
-                    ...(isTerminal    ? [{ value: "CASE_RESOLVED",        label: "Case Resolved" }]        : []),
-                    { value: "STATUS_CHANGED", label: "Status Update" },
-                  ];
-                  return (
-                    <select
-                      defaultValue=""
-                      onChange={async (e) => {
-                        const type = e.target.value;
-                        if (!type) return;
-                        e.target.value = "";
-                        try {
-                          await sendCommunication(caseId!, type);
-                          const res = await getCommunications(caseId!);
-                          setCommunications(res.communications || []);
-                          toast.success("Communication sent");
-                        } catch { toast.error("Failed to send communication"); }
-                      }}
-                      style={{ fontSize: "0.7rem", padding: "0.35rem 0.75rem", backgroundColor: "#1E3A5F", color: "#93C5FD", border: "1px solid #2563EB", borderRadius: 4, cursor: "pointer" }}
-                    >
-                      <option value="" disabled>+ Send Update</option>
-                      {opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  );
-                })()}
+                <button
+                  onClick={async () => {
+                    const st = caseData?.status || "";
+                    const typeMap: Record<string, string> = {
+                      "Dispute Raised":      "CASE_RECEIVED",
+                      "Under Investigation": "INVESTIGATION_STARTED",
+                      "Pending Documents":   "DOCUMENT_REQUESTED",
+                      "Escalated":           "STATUS_CHANGED",
+                      "Resolved":            "CASE_RESOLVED",
+                      "Rejected":            "CASE_RESOLVED",
+                      "Closed":              "CASE_RESOLVED",
+                    };
+                    const type = typeMap[st] || "STATUS_CHANGED";
+                    try {
+                      await sendCommunication(caseId!, type);
+                      const res = await getCommunications(caseId!);
+                      setCommunications(res.communications || []);
+                      toast.success("Communication sent");
+                    } catch { toast.error("Failed to send communication"); }
+                  }}
+                  style={{ fontSize: "0.7rem", padding: "0.35rem 0.75rem", backgroundColor: "#1E3A5F", color: "#93C5FD", border: "1px solid #2563EB", borderRadius: 4, cursor: "pointer" }}
+                >
+                  + Send Update
+                </button>
               </div>
 
               {communications.length === 0 ? (
