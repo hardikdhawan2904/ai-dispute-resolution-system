@@ -71,8 +71,8 @@ export const formSchema = z.object({
   merchant_country: z.string().optional(),
 
   authorization_code: optionalRegex(
-    /^[A-Z0-9]{4,12}$/i,
-    "Authorization code must be 4–12 alphanumeric characters"
+    /^[A-Z0-9][A-Z0-9\-]{3,19}$/i,
+    "Authorization code must be 4–20 alphanumeric characters (hyphens allowed)"
   ),
 
   billing_currency: z.string().optional(),
