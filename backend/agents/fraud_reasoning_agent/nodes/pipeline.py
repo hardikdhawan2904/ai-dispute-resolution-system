@@ -769,6 +769,22 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     else:
         risk_level = "CRITICAL"
 
+    # Strip score weights like (+0.10), (+0.35) from LLM-generated reasoning bullets
+    import re as _re
+    _weight_pattern = _re.compile(r'\s*\(\+[\d.]+\)')
+    if "fraud_reasoning" in parsed and isinstance(parsed["fraud_reasoning"], list):
+        parsed["fraud_reasoning"] = [
+            _weight_pattern.sub("", bullet).strip()
+            for bullet in parsed["fraud_reasoning"]
+            if bullet and bullet.strip()
+        ]
+    if "trust_reasoning" in parsed and isinstance(parsed["trust_reasoning"], list):
+        parsed["trust_reasoning"] = [
+            _weight_pattern.sub("", bullet).strip()
+            for bullet in parsed["trust_reasoning"]
+            if bullet and bullet.strip()
+        ]
+
     # Merge verified scores into final output
     parsed["fraud_probability"] = fraud_probability
     parsed["fraud_risk_level"] = risk_level
