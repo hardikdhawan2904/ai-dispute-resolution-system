@@ -744,7 +744,7 @@ export default function CaseWorkspace() {
                     { label: "Decline-Then-Success Pattern", value: toolSignals.decline_success_pattern ? "Detected" : "Clear",  flag: !!toolSignals.decline_success_pattern, desc: "Multiple declined attempts before successful authorization" },
                     { label: "Refund Claim Verified",         value: toolSignals.refund_claim_unverified ? "Unverified" : "Verified", flag: !!toolSignals.refund_claim_unverified, desc: "Checks if corresponding reversal transaction exists" },
                   ];
-                  const visible = rows.filter(r => r.flag || (r.value !== "Clear" && r.value !== "LOW" && r.value !== "N/A" && r.value !== "Verified"));
+                  const visible = rows.filter(r => r.flag);
                   if (visible.length === 0) return null;
                   return (
                     <Panel>
