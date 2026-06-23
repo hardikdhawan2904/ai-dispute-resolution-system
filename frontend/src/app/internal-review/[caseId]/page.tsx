@@ -1971,7 +1971,7 @@ export default function CaseWorkspace() {
                           To: {comm.recipient} &nbsp;·&nbsp; {formatDate(comm.sent_at || comm.created_at || "")}
                         </div>
                       </div>
-                      {/* Email body — rendered in sandboxed iframe for proper HTML isolation */}
+                      {/* Email body — rendered in sandboxed iframe, expanded to full width for ops preview */}
                       <iframe
                         srcDoc={comm.body}
                         sandbox="allow-same-origin"
@@ -1979,7 +1979,18 @@ export default function CaseWorkspace() {
                         onLoad={(e) => {
                           const iframe = e.currentTarget;
                           try {
-                            const h = iframe.contentDocument?.documentElement?.scrollHeight;
+                            const doc = iframe.contentDocument;
+                            if (doc) {
+                              // Inject CSS to expand 600px email card to full width for ops preview
+                              const style = doc.createElement("style");
+                              style.textContent = [
+                                "body,html{margin:0!important;padding:0!important;background:#fff!important;}",
+                                "table[width='600'],[style*='max-width:600px'],[style*='max-width: 600px']{width:100%!important;max-width:100%!important;}",
+                                "td[align='center']>table{width:100%!important;}",
+                              ].join("");
+                              doc.head?.appendChild(style);
+                            }
+                            const h = doc?.documentElement?.scrollHeight;
                             if (h && h > 0) iframe.style.height = h + "px";
                           } catch {}
                         }}
