@@ -712,13 +712,49 @@ export default function CaseWorkspace() {
                   const bankAtoRisk      = toolSignals.bank_ato_risk ?? "LOW";
                   const bankDeviceStatus = toolSignals.bank_device_status ?? "LOW";
                   const bankMobile       = !!toolSignals.bank_mobile_changed;
-                  const bankBene         = !!toolSignals.bank_new_beneficiary;
+                  // Beneficiary status: only relevant for digital channels (UPI/Internet Banking)
+                  const bankBene         = !isCardPOS && !isATM && !!toolSignals.bank_new_beneficiary;
                   const idStatus         = toolSignals.identity_verified_status ?? (fd as any).identity_verification ?? "PENDING";
-                  const hasSignal = bankAtoRisk !== "LOW" || bankDeviceStatus !== "LOW" || bankMobile || bankBene;
-                  if (!hasSignal) return null;
                   const riskColor = (r: string) => r === "CRITICAL" ? "#FCA5A5" : r === "HIGH" ? "#FB923C" : r === "MEDIUM" ? "#FCD34D" : "#4ADE80";
                   const riskBg   = (r: string) => r !== "LOW" ? "rgba(239,68,68,0.08)" : "rgba(74,222,128,0.05)";
                   const riskBdr  = (r: string) => r !== "LOW" ? "rgba(239,68,68,0.3)" : "rgba(74,222,128,0.2)";
+
+                  // For Card POS / ATM: only show if ATO is elevated or mobile changed
+                  // (beneficiary + device don't apply to card channels)
+                  const hasDigitalSignal = bankAtoRisk !== "LOW" || bankDeviceStatus !== "LOW" || bankMobile || bankBene;
+                  // For Card POS: collapse to one compact line when nothing detected
+                  if (isCardPOS || isATM) {
+                    if (bankAtoRisk !== "LOW") {
+                      // Elevated ATO even for card = still show it
+                      return (
+                        <Panel>
+                          <SectionTitle>Account Security Intelligence</SectionTitle>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem", backgroundColor: riskBg(bankAtoRisk), border: `1px solid ${riskBdr(bankAtoRisk)}`, borderRadius: 4 }}>
+                            <div>
+                              <div style={{ fontSize: "0.7rem", fontWeight: 600, color: riskColor(bankAtoRisk) }}>Digital Account Compromise — {bankAtoRisk}</div>
+                              <div style={{ fontSize: "0.62rem", color: "#64748B", marginTop: 2 }}>Bank security events detected in the 30 days before this transaction.</div>
+                            </div>
+                          </div>
+                        </Panel>
+                      );
+                    }
+                    // Card POS + ATO LOW = show single compact "no indicators" line
+                    return (
+                      <Panel>
+                        <SectionTitle>Account Security Intelligence</SectionTitle>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem", backgroundColor: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.15)", borderRadius: 4 }}>
+                          <div>
+                            <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "#4ADE80" }}>Digital Account Compromise — None Detected</div>
+                            <div style={{ fontSize: "0.62rem", color: "#475569", marginTop: 2 }}>No password resets, SIM swaps, device registrations, or beneficiary additions in last 30 days.</div>
+                          </div>
+                          <span style={{ fontSize: "0.62rem", fontWeight: 700, color: "#4ADE80", flexShrink: 0, marginLeft: "1rem" }}>✓</span>
+                        </div>
+                      </Panel>
+                    );
+                  }
+
+                  // Digital channels: show full panel
+                  if (!hasDigitalSignal) return null;
                   return (
                     <Panel>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
@@ -738,7 +774,7 @@ export default function CaseWorkspace() {
                         <div style={{ padding: "0.625rem", backgroundColor: riskBg(bankDeviceStatus), border: `1px solid ${riskBdr(bankDeviceStatus)}`, borderRadius: 4 }}>
                           <div style={{ fontSize: "0.6rem", color: "#64748B", marginBottom: 3 }}>DEVICE INTELLIGENCE</div>
                           <div style={{ fontSize: "0.75rem", fontWeight: 700, color: bankDeviceStatus !== "LOW" ? "#FCA5A5" : "#4ADE80" }}>
-                            {bankDeviceStatus === "CRITICAL" ? "New Device + Large Txn" : bankDeviceStatus === "HIGH" ? "Unregistered Device" : bankDeviceStatus === "MEDIUM" ? "Recently Registered" : (isCardPOS || isATM) ? "Not Applicable" : "Trusted Device"}
+                            {bankDeviceStatus === "CRITICAL" ? "New Device + Large Txn" : bankDeviceStatus === "HIGH" ? "Unregistered Device" : bankDeviceStatus === "MEDIUM" ? "Recently Registered" : "Trusted Device"}
                           </div>
                         </div>
                         {bankMobile && (
