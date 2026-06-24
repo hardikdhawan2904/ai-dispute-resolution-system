@@ -495,3 +495,81 @@ class CommunicationLog(Base):
             "sent_at":           _iso(self.sent_at),
             "created_at":        _iso(self.created_at),
         }
+
+
+# ── Account Events ─────────────────────────────────────────────────────────────
+
+class AccountEvent(Base):
+    """Bank system security events — password resets, device registrations, etc."""
+    __tablename__ = "account_events"
+
+    event_id        = Column(String(64), primary_key=True, index=True)
+    customer_id     = Column(String(64), index=True, nullable=False)
+    event_type      = Column(String(64), nullable=False, index=True)
+    event_timestamp = Column(DateTime, nullable=False, index=True)
+    metadata_json   = Column(JSON, default=dict)
+    created_at      = Column(DateTime, default=_utc_now, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "event_id":        self.event_id,
+            "customer_id":     self.customer_id,
+            "event_type":      self.event_type,
+            "event_timestamp": _iso(self.event_timestamp),
+            "metadata_json":   self.metadata_json or {},
+        }
+
+
+# ── Customer Devices ───────────────────────────────────────────────────────────
+
+class CustomerDevice(Base):
+    """Registered devices per customer — used for device trust scoring."""
+    __tablename__ = "customer_devices"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    device_id    = Column(String(64), index=True, nullable=False)
+    customer_id  = Column(String(64), index=True, nullable=False)
+    device_name  = Column(String(128), nullable=True)
+    first_seen   = Column(DateTime, nullable=False)
+    last_seen    = Column(DateTime, nullable=True)
+    trusted      = Column(Boolean, default=False)
+    location     = Column(String(128), nullable=True)
+    created_at   = Column(DateTime, default=_utc_now, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "device_id":   self.device_id,
+            "customer_id": self.customer_id,
+            "device_name": self.device_name,
+            "first_seen":  _iso(self.first_seen),
+            "last_seen":   _iso(self.last_seen),
+            "trusted":     self.trusted,
+            "location":    self.location,
+        }
+
+
+# ── Beneficiaries ──────────────────────────────────────────────────────────────
+
+class Beneficiary(Base):
+    """Known beneficiaries / payees per customer."""
+    __tablename__ = "beneficiaries"
+
+    id                = Column(Integer, primary_key=True, index=True)
+    customer_id       = Column(String(64), index=True, nullable=False)
+    beneficiary_name  = Column(String(256), nullable=False)
+    beneficiary_id    = Column(String(128), nullable=True)
+    created_at        = Column(DateTime, default=_utc_now, nullable=False)
+    last_used_at      = Column(DateTime, nullable=True)
+    transaction_count = Column(Integer, default=0)
+    trusted           = Column(Boolean, default=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "customer_id":       self.customer_id,
+            "beneficiary_name":  self.beneficiary_name,
+            "beneficiary_id":    self.beneficiary_id,
+            "created_at":        _iso(self.created_at),
+            "last_used_at":      _iso(self.last_used_at),
+            "transaction_count": self.transaction_count,
+            "trusted":           self.trusted,
+        }

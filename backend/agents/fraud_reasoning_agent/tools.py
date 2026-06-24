@@ -2557,6 +2557,333 @@ def detect_rapid_case_creation(case_id: str) -> str:
         db.close()
 
 
+# ── Bank-Verified Account Intelligence Tools ──────────────────────────────────
+
+_ATO_EVENT_TYPES = {"PASSWORD_RESET", "DEVICE_REGISTERED", "MOBILE_NUMBER_CHANGED",
+                    "BENEFICIARY_ADDED", "SIM_SWAP_DETECTED"}
+
+
+def _parse_txn_datetime(transaction_date: str, transaction_time: str):
+    from datetime import datetime, timezone
+    try:
+        s = f"{transaction_date} {transaction_time}".strip()
+        fmt = "%Y-%m-%d %H:%M" if len(transaction_time.split(":")) == 2 else "%Y-%m-%d %H:%M:%S"
+        return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+    except Exception:
+        return datetime.now(timezone.utc)
+
+
+@tool
+def verify_account_takeover_sequence(case_id: str) -> str:
+    """Detect ATO by reading bank-observed security events from account_events table.
+    Looks for PASSWORD_RESET, DEVICE_REGISTERED, MOBILE_NUMBER_CHANGED, BENEFICIARY_ADDED,
+    SIM_SWAP_DETECTED events within 30 days before the disputed transaction.
+    Uses ONLY bank system records — not customer-reported form answers."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase
+    from services.account_intelligence_service import get_ato_events
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "ATO SEQUENCE ANALYSIS\n  Error: Case not found\n  ATO Risk: LOW\n  Verification Mode: NO_DATA"
+
+        txn_dt = _parse_txn_datetime(case.transaction_date or "", case.transaction_time or "")
+        events = get_ato_events(case.customer_id, txn_dt, db, 30)
+
+        if not events:
+            return (
+                "ATO SEQUENCE ANALYSIS\n"
+                f"  Customer ID      : {case.customer_id}\n"
+                "  ATO Risk         : LOW\n"
+                "  ATO Events Found : 0\n"
+                "  Verification Mode: BANK_VERIFIED\n"
+                "  Assessment       : No bank-observed ATO events in the 30-day window."
+            )
+
+        verified = [e for e in events if e["event_type"] in _ATO_EVENT_TYPES]
+        verified_types = list(set(e["event_type"] for e in verified))
+        n = len(verified_types)
+
+        if n >= 3:   ato_risk = "CRITICAL"
+        elif n == 2: ato_risk = "HIGH"
+        elif n == 1: ato_risk = "MEDIUM"
+        else:        ato_risk = "LOW"
+
+        events_str = ", ".join(verified_types) if verified_types else "None"
+        return (
+            "ATO SEQUENCE ANALYSIS\n"
+            f"  Customer ID      : {case.customer_id}\n"
+            f"  ATO Risk         : {ato_risk}\n"
+            f"  Verified Events  : {n} ({events_str})\n"
+            f"  Verification Mode: BANK_VERIFIED\n"
+            f"  Assessment       : {'ATO sequence detected in bank records — ' + str(n) + ' event type(s) confirmed.' if n > 0 else 'No ATO sequence in bank records.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"verify_account_takeover_sequence failed: {exc}")
+        return f"ATO SEQUENCE ANALYSIS\n  Error: {exc}\n  ATO Risk: LOW\n  Verification Mode: CUSTOMER_REPORTED"
+    finally:
+        db.close()
+
+
+@tool
+def verify_device_intelligence(case_id: str) -> str:
+    """Verify device trust status from customer_devices registry.
+    Determines if the transaction device is known, trusted, recently registered, or completely new.
+    Uses bank device records — not customer-reported claims."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, Transaction
+    from services.account_intelligence_service import get_device_status
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "DEVICE INTELLIGENCE\n  Error: Case not found\n  Fraud Signal: LOW\n  Verification Mode: NO_DATA"
+
+        # Get device_id from actual transaction record
+        txn = db.query(Transaction).filter(Transaction.transaction_id == case.transaction_id).first()
+        device_id = (txn.device_id or "") if txn else ""
+        txn_dt = _parse_txn_datetime(case.transaction_date or "", case.transaction_time or "")
+
+        status = get_device_status(case.customer_id, device_id, txn_dt, db)
+
+        # Check if large transfer
+        all_txns = db.query(Transaction).filter(Transaction.customer_id == case.customer_id.upper()).all()
+        amounts = [t.amount for t in all_txns if t.amount and t.transaction_id != case.transaction_id]
+        avg = sum(amounts) / len(amounts) if amounts else 0.0
+        large_transfer = float(case.amount or 0) > avg * 2 and avg > 0
+
+        ds = status["device_status"]
+        if ds == "NEW_DEVICE" and large_transfer:
+            fraud_signal = "CRITICAL"
+        elif ds == "NEW_DEVICE":
+            fraud_signal = "HIGH"
+        elif ds == "RECENTLY_REGISTERED":
+            fraud_signal = "MEDIUM"
+        else:
+            fraud_signal = "LOW"
+
+        return (
+            "DEVICE INTELLIGENCE\n"
+            f"  Customer ID      : {case.customer_id}\n"
+            f"  Device ID        : {device_id or 'Not available'}\n"
+            f"  Device Status    : {ds}\n"
+            f"  Trusted          : {'Yes' if status['trusted'] else 'No'}\n"
+            f"  Device Age (hrs) : {status['device_age_hours'] or 'N/A'}\n"
+            f"  Large Transfer   : {'Yes' if large_transfer else 'No'}\n"
+            f"  Fraud Signal     : {fraud_signal}\n"
+            f"  Verification Mode: BANK_VERIFIED\n"
+            f"  Assessment       : {ds} device {'with large transfer — critical ATO signal.' if fraud_signal == 'CRITICAL' else '— elevated fraud risk.' if fraud_signal in ('HIGH','MEDIUM') else '— normal pattern.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"verify_device_intelligence failed: {exc}")
+        return f"DEVICE INTELLIGENCE\n  Error: {exc}\n  Fraud Signal: LOW\n  Verification Mode: CUSTOMER_REPORTED"
+    finally:
+        db.close()
+
+
+@tool
+def verify_mobile_change(case_id: str) -> str:
+    """Check bank account_events for MOBILE_NUMBER_CHANGED within 7 days before disputed transaction.
+    Mobile number changes before transactions are a strong ATO signal — fraudster intercepts OTPs."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, AccountEvent
+    from datetime import timedelta, timezone
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "MOBILE CHANGE VERIFICATION\n  Error: Case not found\n  Mobile Change Detected: No\n  Verification Mode: NO_DATA"
+
+        txn_dt = _parse_txn_datetime(case.transaction_date or "", case.transaction_time or "")
+        cutoff = txn_dt - timedelta(days=7)
+
+        event = (
+            db.query(AccountEvent)
+            .filter(
+                AccountEvent.customer_id == case.customer_id.upper(),
+                AccountEvent.event_type == "MOBILE_NUMBER_CHANGED",
+                AccountEvent.event_timestamp >= cutoff,
+                AccountEvent.event_timestamp <= txn_dt,
+            )
+            .order_by(AccountEvent.event_timestamp.desc())
+            .first()
+        )
+
+        if not event:
+            return (
+                "MOBILE CHANGE VERIFICATION\n"
+                f"  Customer ID             : {case.customer_id}\n"
+                "  Mobile Change Detected  : No\n"
+                "  Verification Mode       : BANK_VERIFIED\n"
+                "  Assessment              : No mobile number change in bank records within 7 days."
+            )
+
+        et = event.event_timestamp
+        if et.tzinfo is None: et = et.replace(tzinfo=timezone.utc)
+        hours_before = round((txn_dt - et).total_seconds() / 3600, 1)
+
+        return (
+            "MOBILE CHANGE VERIFICATION\n"
+            f"  Customer ID             : {case.customer_id}\n"
+            "  Mobile Change Detected  : Yes — ALERT\n"
+            f"  Hours Before Txn        : {hours_before}\n"
+            "  Verification Mode       : BANK_VERIFIED\n"
+            f"  Assessment              : MOBILE_NUMBER_CHANGED recorded {hours_before}h before disputed transaction — OTP interception risk."
+        )
+    except Exception as exc:
+        agent_logger.warning(f"verify_mobile_change failed: {exc}")
+        return f"MOBILE CHANGE VERIFICATION\n  Error: {exc}\n  Mobile Change Detected: No\n  Verification Mode: CUSTOMER_REPORTED"
+    finally:
+        db.close()
+
+
+@tool
+def verify_new_beneficiary_activity(case_id: str) -> str:
+    """Check beneficiaries table to determine if the disputed merchant/payee is a known
+    beneficiary or was recently added. New beneficiaries for large amounts = strong fraud signal."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, AccountEvent
+    from services.account_intelligence_service import get_beneficiary_status
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "BENEFICIARY INTELLIGENCE\n  Error: Case not found\n  New Beneficiary: No\n  Verification Mode: NO_DATA"
+
+        txn_dt = _parse_txn_datetime(case.transaction_date or "", case.transaction_time or "")
+        bstatus = get_beneficiary_status(case.customer_id, case.merchant or "", txn_dt, db)
+
+        # Also check if BENEFICIARY_ADDED event exists for this merchant
+        bene_event = None
+        if not bstatus["known_beneficiary"]:
+            from datetime import timedelta
+            bene_event = (
+                db.query(AccountEvent)
+                .filter(
+                    AccountEvent.customer_id == case.customer_id.upper(),
+                    AccountEvent.event_type == "BENEFICIARY_ADDED",
+                    AccountEvent.event_timestamp >= txn_dt - timedelta(days=7),
+                    AccountEvent.event_timestamp <= txn_dt,
+                )
+                .first()
+            )
+
+        new_beneficiary = not bstatus["known_beneficiary"]
+        age_note = ""
+        if bene_event:
+            from datetime import timezone as _tz
+            et = bene_event.event_timestamp
+            if et.tzinfo is None: et = et.replace(tzinfo=_tz.utc)
+            hrs = round((txn_dt - et).total_seconds() / 3600, 1)
+            age_note = f"  Beneficiary Added   : {hrs}h before transaction (bank event)\n"
+
+        fraud_signal = "HIGH" if new_beneficiary else "LOW"
+
+        return (
+            "BENEFICIARY INTELLIGENCE\n"
+            f"  Customer ID         : {case.customer_id}\n"
+            f"  Merchant / Payee    : {case.merchant}\n"
+            f"  Known Beneficiary   : {'Yes' if not new_beneficiary else 'No'}\n"
+            f"  New Beneficiary     : {'Yes — ALERT' if new_beneficiary else 'No'}\n"
+            + age_note +
+            f"  Fraud Signal        : {fraud_signal}\n"
+            f"  Verification Mode   : BANK_VERIFIED\n"
+            f"  Assessment          : {'First-time payee — not in customer beneficiary registry.' if new_beneficiary else 'Known beneficiary with prior transaction history.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"verify_new_beneficiary_activity failed: {exc}")
+        return f"BENEFICIARY INTELLIGENCE\n  Error: {exc}\n  New Beneficiary: No\n  Verification Mode: CUSTOMER_REPORTED"
+    finally:
+        db.close()
+
+
+@tool
+def validate_customer_security_claims(case_id: str) -> str:
+    """Cross-reference customer-reported security claims against bank account_events.
+    Determines VERIFIED, PARTIALLY_VERIFIED, or UNVERIFIED status.
+    Does NOT affect fraud_probability — affects confidence and reasoning quality only."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, AccountEvent, CustomerDevice
+    from datetime import timedelta
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "CLAIM VALIDATION\n  Error: Case not found\n  Identity Verification Status: UNVERIFIED\n  Verification Mode: NO_DATA"
+
+        meta = case.transaction_metadata or {}
+        txn_dt = _parse_txn_datetime(case.transaction_date or "", case.transaction_time or "")
+        cutoff = txn_dt - timedelta(days=30)
+
+        events = db.query(AccountEvent).filter(
+            AccountEvent.customer_id == case.customer_id.upper(),
+            AccountEvent.event_timestamp >= cutoff,
+        ).all()
+        event_types = {e.event_type for e in events}
+
+        def _claim_val(claim_key: str, bank_event: str) -> str:
+            claimed = str(meta.get(claim_key, "")).strip().lower() in {"yes", "true", "1", "True"}
+            if not claimed:
+                return "NOT_CLAIMED"
+            return "VERIFIED" if bank_event in event_types else "UNVERIFIED"
+
+        validations = {
+            "password_reset":    _claim_val("password_reset_before", "PASSWORD_RESET"),
+            "sim_swap":          _claim_val("sim_swap_suspected", "SIM_SWAP_DETECTED"),
+            "mobile_change":     _claim_val("mobile_number_changed", "MOBILE_NUMBER_CHANGED"),
+        }
+
+        # Device claim
+        from database.models import Transaction as _Txn
+        txn = db.query(_Txn).filter(_Txn.transaction_id == case.transaction_id).first()
+        device_id = (txn.device_id or "") if txn else ""
+        if device_id:
+            dev = db.query(CustomerDevice).filter(
+                CustomerDevice.customer_id == case.customer_id.upper(),
+                CustomerDevice.device_id == device_id,
+            ).first()
+            validations["new_device"] = "VERIFIED" if not dev or not dev.trusted else "UNVERIFIED"
+        else:
+            validations["new_device"] = "NOT_CLAIMED"
+
+        active = {k: v for k, v in validations.items() if v != "NOT_CLAIMED"}
+        verified_count = sum(1 for v in active.values() if v == "VERIFIED")
+        total_claimed = len(active)
+
+        if total_claimed == 0:
+            id_status = "NO_CLAIMS"
+        elif verified_count == total_claimed:
+            id_status = "VERIFIED"
+        elif verified_count >= total_claimed / 2:
+            id_status = "PARTIALLY_VERIFIED"
+        else:
+            id_status = "UNVERIFIED"
+
+        val_str = " | ".join(f"{k}={v}" for k, v in validations.items())
+
+        return (
+            "CLAIM VALIDATION\n"
+            f"  Customer ID                 : {case.customer_id}\n"
+            f"  Claims Checked              : {total_claimed}\n"
+            f"  Claims Verified             : {verified_count}\n"
+            f"  Claim Validations           : {val_str}\n"
+            f"  Identity Verification Status: {id_status}\n"
+            f"  Verification Mode           : BANK_VERIFIED\n"
+            f"  Assessment                  : {verified_count}/{total_claimed} customer claims corroborated by bank records."
+        )
+    except Exception as exc:
+        agent_logger.warning(f"validate_customer_security_claims failed: {exc}")
+        return f"CLAIM VALIDATION\n  Error: {exc}\n  Identity Verification Status: UNVERIFIED\n  Verification Mode: CUSTOMER_REPORTED"
+    finally:
+        db.close()
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: dict = {
@@ -2609,4 +2936,10 @@ TOOL_REGISTRY: dict = {
     "detect_historical_case_similarity":      detect_historical_case_similarity,
     "detect_linked_fraud_network":            detect_linked_fraud_network,
     "detect_rapid_case_creation":             detect_rapid_case_creation,
+    # Bank-verified account intelligence
+    "verify_account_takeover_sequence":       verify_account_takeover_sequence,
+    "verify_device_intelligence":             verify_device_intelligence,
+    "verify_mobile_change":                   verify_mobile_change,
+    "verify_new_beneficiary_activity":        verify_new_beneficiary_activity,
+    "validate_customer_security_claims":      validate_customer_security_claims,
 }

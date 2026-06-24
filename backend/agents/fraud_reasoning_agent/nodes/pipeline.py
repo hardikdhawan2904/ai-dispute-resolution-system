@@ -145,6 +145,12 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
         "detect_historical_case_similarity":      (TOOL_REGISTRY["detect_historical_case_similarity"],      {"case_id": case_id}),
         "detect_linked_fraud_network":            (TOOL_REGISTRY["detect_linked_fraud_network"],            {"case_id": case_id}),
         "detect_rapid_case_creation":             (TOOL_REGISTRY["detect_rapid_case_creation"],             {"case_id": case_id}),
+        # Bank-verified account intelligence
+        "verify_account_takeover_sequence":       (TOOL_REGISTRY["verify_account_takeover_sequence"],       {"case_id": case_id}),
+        "verify_device_intelligence":             (TOOL_REGISTRY["verify_device_intelligence"],             {"case_id": case_id}),
+        "verify_mobile_change":                   (TOOL_REGISTRY["verify_mobile_change"],                   {"case_id": case_id}),
+        "verify_new_beneficiary_activity":        (TOOL_REGISTRY["verify_new_beneficiary_activity"],        {"case_id": case_id}),
+        "validate_customer_security_claims":      (TOOL_REGISTRY["validate_customer_security_claims"],      {"case_id": case_id}),
     }
 
     if channel == "UPI":
@@ -768,6 +774,12 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     _hcs_report  = str(tool_results.get("detect_historical_case_similarity", ""))
     _lfn_report  = str(tool_results.get("detect_linked_fraud_network", ""))
     _rcc_report  = str(tool_results.get("detect_rapid_case_creation", ""))
+    # Bank-verified intelligence
+    _vats_report = str(tool_results.get("verify_account_takeover_sequence", ""))
+    _vdi_report  = str(tool_results.get("verify_device_intelligence", ""))
+    _vmc_report  = str(tool_results.get("verify_mobile_change", ""))
+    _vnb_report  = str(tool_results.get("verify_new_beneficiary_activity", ""))
+    _vcsc_report = str(tool_results.get("validate_customer_security_claims", ""))
 
     prior_fraud_victim = any("Victim Score" in l and ("HIGH" in l or "MEDIUM" in l) for l in _hfv_report.split("\n"))
     ato_risk_level     = "LOW"
@@ -781,6 +793,26 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     fraud_network        = any("Fraud Network Detected" in l and "Yes" in l for l in _lfn_report.split("\n"))
     rapid_dispute        = any("Repeat Dispute Pattern" in l and "Yes" in l for l in _rcc_report.split("\n"))
 
+    # Bank-verified signals
+    bank_ato_risk = "LOW"
+    for _l in _vats_report.split("\n"):
+        if "ATO Risk" in _l:
+            if "CRITICAL" in _l: bank_ato_risk = "CRITICAL"
+            elif "HIGH" in _l:   bank_ato_risk = "HIGH"
+            elif "MEDIUM" in _l: bank_ato_risk = "MEDIUM"
+
+    bank_device_critical = any("CRITICAL" in l and "Fraud Signal" in l for l in _vdi_report.split("\n"))
+    bank_device_high     = any("HIGH" in l and "Fraud Signal" in l for l in _vdi_report.split("\n"))
+    bank_mobile_changed  = any("Mobile Change Detected" in l and "Yes" in l for l in _vmc_report.split("\n"))
+    bank_new_bene        = any("New Beneficiary" in l and "Yes" in l for l in _vnb_report.split("\n"))
+
+    identity_verified_status = "UNVERIFIED"
+    for _l in _vcsc_report.split("\n"):
+        if "Identity Verification Status" in _l:
+            if "PARTIALLY_VERIFIED" in _l: identity_verified_status = "PARTIALLY_VERIFIED"
+            elif "NO_CLAIMS" in _l:        identity_verified_status = "NO_CLAIMS"
+            elif "VERIFIED" in _l and "UN" not in _l: identity_verified_status = "VERIFIED"
+
     # Calibrated universal weights — influential but don't overpower channel signals
     if prior_fraud_victim:                      prob += 0.10
     if ato_risk_level == "CRITICAL":            prob += 0.30
@@ -789,6 +821,15 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     if case_similarity_high:                    prob += 0.15
     if fraud_network:                           prob += 0.20
     if rapid_dispute:                           prob += 0.15
+
+    # Bank-verified account intelligence (primary source — overrides form-based where available)
+    if bank_ato_risk == "CRITICAL":             prob += 0.30
+    elif bank_ato_risk == "HIGH":               prob += 0.20
+    elif bank_ato_risk == "MEDIUM":             prob += 0.10
+    if bank_device_critical:                    prob += 0.40
+    elif bank_device_high:                      prob += 0.30
+    if bank_mobile_changed:                     prob += 0.35
+    if bank_new_bene:                           prob += 0.10
 
     fraud_probability = round(max(0.00, min(1.00, prob)), 2)
 
@@ -857,7 +898,12 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     # Trust intelligence attributes
     parsed["user_trust_score"] = trust_score
     parsed["behavioral_risk_score"] = behavioral_risk_score
-    parsed["identity_verification"] = kyc_status
+    # Use bank-verified identity status when available; fall back to KYC match result
+    parsed["identity_verification"] = (
+        identity_verified_status
+        if identity_verified_status not in ("UNVERIFIED", "NO_CLAIMS")
+        else kyc_status
+    )
     parsed["kyc_checks"] = {
         "name_match": name_match,
         "contact_match": contact_match,
@@ -917,6 +963,12 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
         "case_similarity_high":       case_similarity_high,
         "fraud_network_detected":     fraud_network,
         "rapid_dispute_pattern":      rapid_dispute,
+        # Bank-verified signals
+        "bank_ato_risk":              bank_ato_risk,
+        "bank_device_status":         "CRITICAL" if bank_device_critical else "HIGH" if bank_device_high else "LOW",
+        "bank_mobile_changed":        bank_mobile_changed,
+        "bank_new_beneficiary":       bank_new_bene,
+        "identity_verified_status":   identity_verified_status,
     }
 
     log_workflow_event(

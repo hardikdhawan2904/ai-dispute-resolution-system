@@ -707,6 +707,58 @@ export default function CaseWorkspace() {
                   </div>
                 </Panel>
 
+                {/* ── Account Security Intelligence (bank-verified) ────── */}
+                {(() => {
+                  const bankAtoRisk      = toolSignals.bank_ato_risk ?? "LOW";
+                  const bankDeviceStatus = toolSignals.bank_device_status ?? "LOW";
+                  const bankMobile       = !!toolSignals.bank_mobile_changed;
+                  const bankBene         = !!toolSignals.bank_new_beneficiary;
+                  const idStatus         = toolSignals.identity_verified_status ?? (fd as any).identity_verification ?? "PENDING";
+                  const hasSignal = bankAtoRisk !== "LOW" || bankDeviceStatus !== "LOW" || bankMobile || bankBene;
+                  if (!hasSignal) return null;
+                  const riskColor = (r: string) => r === "CRITICAL" ? "#FCA5A5" : r === "HIGH" ? "#FB923C" : r === "MEDIUM" ? "#FCD34D" : "#4ADE80";
+                  const riskBg   = (r: string) => r !== "LOW" ? "rgba(239,68,68,0.08)" : "rgba(74,222,128,0.05)";
+                  const riskBdr  = (r: string) => r !== "LOW" ? "rgba(239,68,68,0.3)" : "rgba(74,222,128,0.2)";
+                  return (
+                    <Panel>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                        <SectionTitle>Account Security Intelligence</SectionTitle>
+                        <span style={{ fontSize: "0.6rem", color: "#475569", fontStyle: "italic" }}>Bank-verified events only</span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                        <div style={{ padding: "0.625rem", backgroundColor: riskBg(bankAtoRisk), border: `1px solid ${riskBdr(bankAtoRisk)}`, borderRadius: 4 }}>
+                          <div style={{ fontSize: "0.6rem", color: "#64748B", marginBottom: 3 }}>ATO SEQUENCE (BANK)</div>
+                          <div style={{ fontSize: "0.75rem", fontWeight: 700, color: riskColor(bankAtoRisk) }}>{bankAtoRisk}</div>
+                        </div>
+                        <div style={{ padding: "0.625rem", backgroundColor: riskBg(bankDeviceStatus), border: `1px solid ${riskBdr(bankDeviceStatus)}`, borderRadius: 4 }}>
+                          <div style={{ fontSize: "0.6rem", color: "#64748B", marginBottom: 3 }}>DEVICE INTELLIGENCE</div>
+                          <div style={{ fontSize: "0.75rem", fontWeight: 700, color: bankDeviceStatus !== "LOW" ? "#FCA5A5" : "#4ADE80" }}>
+                            {bankDeviceStatus === "CRITICAL" ? "New Device + Large Txn" : bankDeviceStatus === "HIGH" ? "Unregistered Device" : "Trusted Device"}
+                          </div>
+                        </div>
+                        {bankMobile && (
+                          <div style={{ padding: "0.625rem", backgroundColor: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4 }}>
+                            <div style={{ fontSize: "0.6rem", color: "#64748B", marginBottom: 3 }}>MOBILE NUMBER CHANGE</div>
+                            <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#FCA5A5" }}>Detected — within 7 days</div>
+                          </div>
+                        )}
+                        {bankBene && (
+                          <div style={{ padding: "0.625rem", backgroundColor: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 4 }}>
+                            <div style={{ fontSize: "0.6rem", color: "#64748B", marginBottom: 3 }}>BENEFICIARY STATUS</div>
+                            <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#FCD34D" }}>New / Unverified Payee</div>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem", backgroundColor: "#162040", border: "1px solid #334155", borderRadius: 4 }}>
+                        <span style={{ fontSize: "0.7rem", color: "#64748B" }}>Identity Verification Status</span>
+                        <span style={{ fontSize: "0.72rem", fontWeight: 700, color: idStatus === "VERIFIED" ? "#4ADE80" : idStatus === "PARTIALLY_VERIFIED" ? "#FCD34D" : "#FCA5A5" }}>
+                          {idStatus === "VERIFIED" ? "✓ VERIFIED" : idStatus === "PARTIALLY_VERIFIED" ? "⚠ PARTIALLY VERIFIED" : idStatus === "NO_CLAIMS" ? "— NO CLAIMS" : "✗ UNVERIFIED"}
+                        </span>
+                      </div>
+                    </Panel>
+                  );
+                })()}
+
                 {/* ── Channel-specific signal cards ────────────────────── */}
                 {isCardPOS && (
                   <Panel>
