@@ -733,7 +733,7 @@ export default function CaseWorkspace() {
                         <div style={{ padding: "0.625rem", backgroundColor: riskBg(bankDeviceStatus), border: `1px solid ${riskBdr(bankDeviceStatus)}`, borderRadius: 4 }}>
                           <div style={{ fontSize: "0.6rem", color: "#64748B", marginBottom: 3 }}>DEVICE INTELLIGENCE</div>
                           <div style={{ fontSize: "0.75rem", fontWeight: 700, color: bankDeviceStatus !== "LOW" ? "#FCA5A5" : "#4ADE80" }}>
-                            {bankDeviceStatus === "CRITICAL" ? "New Device + Large Txn" : bankDeviceStatus === "HIGH" ? "Unregistered Device" : "Trusted Device"}
+                            {bankDeviceStatus === "CRITICAL" ? "New Device + Large Txn" : bankDeviceStatus === "HIGH" ? "Unregistered Device" : bankDeviceStatus === "MEDIUM" ? "Recently Registered" : (isCardPOS || isATM) ? "Not Applicable" : "Trusted Device"}
                           </div>
                         </div>
                         {bankMobile && (
