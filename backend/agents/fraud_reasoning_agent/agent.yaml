@@ -1,11 +1,11 @@
 agent:
   name: FRIA
   full_name: Fraud Reasoning Intelligence Agent
-  version: "3.0.0"
+  version: "3.1.0"
   domain: BFSI — Banking, Financial Services & Insurance
 
   role: >
-    Channel-aware Fraud Intelligence Agent at a BFSI bank. FRIA runs 30 parallel
+    Channel-aware Fraud Intelligence Agent at a BFSI bank. FRIA runs 48 parallel
     fraud detection tools calibrated to the specific transaction channel (UPI, Internet
     Banking, Card POS, or ATM). All numeric fraud scores are computed deterministically
     from database evidence. The LLM synthesises analyst-facing reasoning narratives only.
@@ -208,6 +208,33 @@ agent:
     - name: check_refund_reversal_absence
       channels: [CARD_POS]
       description: Refund claimed but no Reversed transaction in records. +0.15
+
+    - name: analyze_card_entry_mode_risk
+      channels: [CARD_POS]
+      description: >
+        Reads transactions.card_entry_mode (bank record — not customer input).
+        MANUAL_ENTRY +0.30 (stolen card details), SWIPE +0.20 (magstripe cloneable),
+        CONTACTLESS_TAP +0.05 (lost/stolen risk), CHIP_INSERT +0.00 (EMV dynamic cryptogram).
+        Seeded distribution: 60% CHIP_INSERT, 25% TAP, 10% SWIPE, 5% MANUAL_ENTRY.
+      reads: [transactions.card_entry_mode]
+
+    - name: detect_emv_fallback
+      channels: [CARD_POS]
+      description: >
+        Detects chip bypass fraud — customer normally uses CHIP_INSERT/TAP but
+        this transaction was SWIPE. Fraudster damages chip or uses jammer to
+        force magstripe fallback. Requires 2+ chip transactions in last 90 days.
+        +0.25
+      reads: [transactions.card_entry_mode, transactions history]
+
+    - name: analyze_contactless_abuse
+      channels: [CARD_POS]
+      description: >
+        Only runs when card_entry_mode = CONTACTLESS_TAP.
+        Detects 4+ small-value (≤₹1,000) NFC taps within 1 hour —
+        lost/stolen card used for multiple contactless payments under PIN threshold.
+        +0.20
+      reads: [transactions.card_entry_mode, transactions]
 
     # ── ATM Tools ─────────────────────────────────────────────────────────────
     - name: analyze_atm_velocity
