@@ -738,13 +738,12 @@ export default function CaseWorkspace() {
                   const riskBg   = (r: string) => r !== "LOW" ? "rgba(239,68,68,0.08)" : "rgba(74,222,128,0.05)";
                   const riskBdr  = (r: string) => r !== "LOW" ? "rgba(239,68,68,0.3)" : "rgba(74,222,128,0.2)";
 
-                  // For Card POS / ATM: only show if ATO is elevated or mobile changed
-                  // (beneficiary + device don't apply to card channels)
+                  // Card POS / ATM: only show Account Security Intelligence if ATO is elevated
+                  // When ATO is LOW (no compromise detected), hide entirely — card fraud
+                  // is driven by card signals, not account security events
                   const hasDigitalSignal = bankAtoRisk !== "LOW" || bankDeviceStatus !== "LOW" || bankMobile || bankBene;
-                  // For Card POS: collapse to one compact line when nothing detected
                   if (isCardPOS || isATM) {
                     if (bankAtoRisk !== "LOW") {
-                      // Elevated ATO even for card = still show it
                       return (
                         <Panel>
                           <SectionTitle>Account Security Intelligence</SectionTitle>
@@ -757,19 +756,7 @@ export default function CaseWorkspace() {
                         </Panel>
                       );
                     }
-                    // Card POS + ATO LOW = show single compact "no indicators" line
-                    return (
-                      <Panel>
-                        <SectionTitle>Account Security Intelligence</SectionTitle>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem", backgroundColor: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.15)", borderRadius: 4 }}>
-                          <div>
-                            <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "#4ADE80" }}>Digital Account Compromise — None Detected</div>
-                            <div style={{ fontSize: "0.62rem", color: "#475569", marginTop: 2 }}>No password resets, SIM swaps, device registrations, or beneficiary additions in last 30 days.</div>
-                          </div>
-                          <span style={{ fontSize: "0.62rem", fontWeight: 700, color: "#4ADE80", flexShrink: 0, marginLeft: "1rem" }}>✓</span>
-                        </div>
-                      </Panel>
-                    );
+                    return null;  // ATO LOW for card = hide entirely
                   }
 
                   // Digital channels: show full panel
