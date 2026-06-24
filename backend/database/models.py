@@ -109,6 +109,7 @@ class Transaction(Base):
     latitude          = Column(Float, nullable=True)   # GPS coordinates for accurate geovelocity
     longitude         = Column(Float, nullable=True)
     device_id         = Column(String(64), nullable=True)
+    card_entry_mode   = Column(String(32), nullable=True)  # SWIPE|CHIP_INSERT|CONTACTLESS_TAP|MANUAL_ENTRY|UNKNOWN
     is_disputed       = Column(Boolean, default=False)
     created_at        = Column(DateTime, default=_utc_now, nullable=False)
 
@@ -127,6 +128,7 @@ class Transaction(Base):
             "latitude":         self.latitude,
             "longitude":        self.longitude,
             "device_id":        self.device_id,
+            "card_entry_mode":  self.card_entry_mode,
             "is_disputed":      self.is_disputed,
             "created_at":       _iso(self.created_at),
         }

@@ -818,6 +818,51 @@ export default function CaseWorkspace() {
                   );
                 })()}
 
+                {/* ── Card Authentication Intelligence (Card POS only) ───── */}
+                {isCardPOS && (() => {
+                  const entryMode   = toolSignals.card_entry_mode ?? "UNKNOWN";
+                  const entryRisk   = toolSignals.entry_mode_risk ?? "LOW";
+                  const emvFallback = !!toolSignals.emv_fallback;
+                  const ctapAbuse   = !!toolSignals.contactless_abuse;
+                  const modeColor   = entryRisk === "HIGH" ? "#F87171" : entryRisk === "MEDIUM" ? "#FBBF24" : "#4ADE80";
+                  const modeBg      = entryRisk === "HIGH" ? "rgba(248,113,113,0.08)" : entryRisk === "MEDIUM" ? "rgba(251,191,36,0.08)" : "rgba(74,222,128,0.05)";
+                  const modeExplain: Record<string, string> = {
+                    MANUAL_ENTRY:    "Card number keyed manually — high risk of stolen details or merchant manipulation.",
+                    SWIPE:           "Magstripe swipe — data can be cloned via skimming. EMV chip may have been bypassed.",
+                    CONTACTLESS_TAP: "NFC tap — generally secure. Check for lost/stolen card if multiple taps detected.",
+                    CHIP_INSERT:     "EMV chip — dynamic cryptogram per transaction. Lowest fraud risk.",
+                    UNKNOWN:         "Entry mode not recorded in transaction data.",
+                  };
+                  if (entryRisk === "LOW" && !emvFallback && !ctapAbuse) return null;
+                  return (
+                    <Panel>
+                      <SectionTitle>Card Authentication Intelligence</SectionTitle>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "0.625rem 0.875rem", backgroundColor: modeBg, border: `1px solid ${modeColor}44`, borderRadius: 6 }}>
+                          <div>
+                            <div style={{ fontSize: "0.6rem", color: "#64748B", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>Card Entry Mode</div>
+                            <div style={{ fontSize: "0.82rem", fontWeight: 700, color: modeColor }}>{entryMode.replace(/_/g, " ")}</div>
+                            <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 4 }}>{modeExplain[entryMode] ?? ""}</div>
+                          </div>
+                          <span style={{ fontSize: "0.62rem", fontWeight: 700, padding: "2px 10px", borderRadius: 20, backgroundColor: modeBg, color: modeColor, border: `1px solid ${modeColor}55`, flexShrink: 0, marginLeft: "0.75rem" }}>{entryRisk}</span>
+                        </div>
+                        {emvFallback && (
+                          <div style={{ padding: "0.5rem 0.875rem", backgroundColor: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 6 }}>
+                            <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#F87171" }}>EMV Fallback Detected</div>
+                            <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>Chip bypassed — customer normally uses chip but this transaction was swiped</div>
+                          </div>
+                        )}
+                        {ctapAbuse && (
+                          <div style={{ padding: "0.5rem 0.875rem", backgroundColor: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 6 }}>
+                            <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#FBBF24" }}>Contactless Abuse Detected</div>
+                            <div style={{ fontSize: "0.65rem", color: "#64748B", marginTop: 2 }}>4+ small-value NFC taps in 1 hour — possible lost/stolen card</div>
+                          </div>
+                        )}
+                      </div>
+                    </Panel>
+                  );
+                })()}
+
                 {isATM && (
                   <Panel>
                     <SectionTitle>ATM Signals</SectionTitle>

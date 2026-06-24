@@ -54,6 +54,14 @@ def _apply_column_migrations() -> None:
         existing_cols = {c["name"] for c in inspector.get_columns("dispute_cases")}
 
         # Agent 3 — WOA: workflow_plan column
+        # card_entry_mode on transactions
+        if "transactions" in inspector.get_table_names():
+            txn_cols_check = {c["name"] for c in inspector.get_columns("transactions")}
+            if "card_entry_mode" not in txn_cols_check:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN card_entry_mode VARCHAR(32)"))
+                conn.commit()
+                db_logger.info("Migration applied: transactions.card_entry_mode added.")
+
         # GPS coordinates on transactions
         if "transactions" in inspector.get_table_names():
             txn_cols = {c["name"] for c in inspector.get_columns("transactions")}

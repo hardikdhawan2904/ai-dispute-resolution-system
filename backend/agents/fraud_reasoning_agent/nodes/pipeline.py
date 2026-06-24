@@ -204,6 +204,10 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
             "evaluate_mcc_risk":                    (TOOL_REGISTRY["evaluate_mcc_risk"],                    {"case_id": case_id}),
             "analyze_decline_success_pattern":      (TOOL_REGISTRY["analyze_decline_success_pattern"],      {"case_id": case_id}),
             "check_refund_reversal_absence":        (TOOL_REGISTRY["check_refund_reversal_absence"],        {"case_id": case_id}),
+            # Card Entry Mode Intelligence
+            "analyze_card_entry_mode_risk":         (TOOL_REGISTRY["analyze_card_entry_mode_risk"],         {"case_id": case_id}),
+            "detect_emv_fallback":                  (TOOL_REGISTRY["detect_emv_fallback"],                  {"case_id": case_id}),
+            "analyze_contactless_abuse":            (TOOL_REGISTRY["analyze_contactless_abuse"],            {"case_id": case_id}),
             **_universal_tools,
         }
 
@@ -715,6 +719,33 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     if decline_success_pattern:                 prob += 0.20
     if refund_claim_unverified:                 prob += 0.15
 
+    # ── Card Entry Mode Intelligence ──────────────────────────────────────────
+    _cem_report  = str(tool_results.get("analyze_card_entry_mode_risk", ""))
+    _emvf_report = str(tool_results.get("detect_emv_fallback", ""))
+    _ctap_report = str(tool_results.get("analyze_contactless_abuse", ""))
+
+    card_entry_mode = "UNKNOWN"
+    entry_mode_risk = "LOW"
+    entry_mode_weight = 0.0
+    for _l in _cem_report.split("\n"):
+        if "Entry Mode" in _l and ":" in _l:
+            _val = _l.split(":")[-1].strip()
+            if _val in ("SWIPE","CHIP_INSERT","CONTACTLESS_TAP","MANUAL_ENTRY","UNKNOWN"):
+                card_entry_mode = _val
+        if "Risk Level" in _l:
+            if "HIGH" in _l:   entry_mode_risk = "HIGH"
+            elif "MEDIUM" in _l: entry_mode_risk = "MEDIUM"
+        if "Fraud Weight" in _l:
+            try: entry_mode_weight = float(_l.split(":")[-1].strip())
+            except Exception: pass
+
+    emv_fallback       = any("EMV Fallback Detected" in l and "Yes" in l for l in _emvf_report.split("\n"))
+    contactless_abuse  = any("Contactless Abuse Detected" in l and "Yes" in l for l in _ctap_report.split("\n"))
+
+    if entry_mode_weight > 0:                   prob += entry_mode_weight
+    if emv_fallback:                            prob += 0.25
+    if contactless_abuse:                       prob += 0.20
+
     # ── UPI intelligence ─────────────────────────────────────────────────────
     _nbr_report  = str(tool_results.get("analyze_new_beneficiary_risk", ""))
     _ucr_report  = str(tool_results.get("detect_upi_collect_request_fraud", ""))
@@ -945,6 +976,11 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
         "mcc_risk_level":             mcc_risk_level,
         "decline_success_pattern":    decline_success_pattern,
         "refund_claim_unverified":    refund_claim_unverified,
+        # Card Entry Mode Intelligence
+        "card_entry_mode":            card_entry_mode,
+        "entry_mode_risk":            entry_mode_risk,
+        "emv_fallback":               emv_fallback,
+        "contactless_abuse":          contactless_abuse,
         # UPI intelligence
         "new_beneficiary_risk":       new_beneficiary_risk,
         "upi_collect_fraud":          upi_collect_fraud,

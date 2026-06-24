@@ -2557,6 +2557,173 @@ def detect_rapid_case_creation(case_id: str) -> str:
         db.close()
 
 
+# ── Card Entry Mode Intelligence Tools ────────────────────────────────────────
+
+_ENTRY_MODE_RISK: dict[str, tuple[str, float, str]] = {
+    # mode → (risk_level, fraud_weight, reason)
+    "MANUAL_ENTRY":      ("HIGH",   0.30, "Card number manually entered — associated with card-not-present abuse, merchant manipulation, and stolen card details."),
+    "SWIPE":             ("HIGH",   0.20, "Magstripe swipe — data can be cloned via skimming devices. EMV chip bypassed."),
+    "CONTACTLESS_TAP":   ("LOW",    0.05, "NFC tap — generally secure but vulnerable to lost/stolen card abuse."),
+    "CHIP_INSERT":       ("LOW",    0.00, "EMV chip insert — dynamic cryptogram generated per transaction. Lowest fraud risk."),
+    "UNKNOWN":           ("LOW",    0.00, "Entry mode not recorded in transaction metadata."),
+}
+
+
+@tool
+def analyze_card_entry_mode_risk(case_id: str) -> str:
+    """Assess fraud risk based on how the card was physically authenticated at the POS terminal.
+    Reads card_entry_mode directly from the transactions table (bank record — not customer input).
+    SWIPE and MANUAL_ENTRY carry significantly higher fraud risk than CHIP_INSERT."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, Transaction
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "CARD ENTRY MODE ANALYSIS\n  Error: Case not found\n  Entry Mode: UNKNOWN\n  Risk Level: LOW"
+
+        txn = db.query(Transaction).filter(Transaction.transaction_id == case.transaction_id).first()
+        if not txn:
+            return "CARD ENTRY MODE ANALYSIS\n  Entry Mode: UNKNOWN\n  Risk Level: LOW\n  Reason: Transaction not found in records."
+
+        mode = (txn.card_entry_mode or "UNKNOWN").upper().strip()
+        if mode not in _ENTRY_MODE_RISK:
+            mode = "UNKNOWN"
+
+        risk_level, weight, reason = _ENTRY_MODE_RISK[mode]
+
+        return (
+            "CARD ENTRY MODE ANALYSIS\n"
+            f"  Case ID          : {case_id}\n"
+            f"  Transaction ID   : {case.transaction_id}\n"
+            f"  Entry Mode       : {mode}\n"
+            f"  Risk Level       : {risk_level}\n"
+            f"  Fraud Weight     : {weight}\n"
+            f"  Reason           : {reason}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_card_entry_mode_risk failed: {exc}")
+        return f"CARD ENTRY MODE ANALYSIS\n  Error: {exc}\n  Entry Mode: UNKNOWN\n  Risk Level: LOW"
+    finally:
+        db.close()
+
+
+@tool
+def detect_emv_fallback(case_id: str) -> str:
+    """Detect EMV fallback fraud — chip transaction that failed and fell back to magstripe swipe.
+    This is a common fraud pattern: chip is intentionally damaged or jammed,
+    forcing the terminal to use less-secure magstripe instead of EMV cryptogram.
+    Reads card_entry_mode and decline patterns from the transactions table."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, Transaction
+    from datetime import timedelta
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "EMV FALLBACK DETECTION\n  EMV Fallback Detected: No\n  Reason: Case not found."
+
+        txn = db.query(Transaction).filter(Transaction.transaction_id == case.transaction_id).first()
+        if not txn:
+            return "EMV FALLBACK DETECTION\n  EMV Fallback Detected: No\n  Reason: Transaction not found."
+
+        mode = (txn.card_entry_mode or "UNKNOWN").upper()
+
+        # EMV fallback: current txn is SWIPE but customer has prior CHIP_INSERT history
+        if mode != "SWIPE":
+            return (
+                "EMV FALLBACK DETECTION\n"
+                f"  Entry Mode       : {mode}\n"
+                "  EMV Fallback Detected: No\n"
+                "  Reason           : Transaction was not a swipe — no fallback possible."
+            )
+
+        # Check if this customer historically uses chip
+        cutoff = txn.transaction_date - timedelta(days=90)
+        recent_txns = db.query(Transaction).filter(
+            Transaction.customer_id == case.customer_id.upper(),
+            Transaction.transaction_date >= cutoff,
+            Transaction.transaction_id != case.transaction_id,
+            Transaction.card_entry_mode.in_(["CHIP_INSERT", "CONTACTLESS_TAP"]),
+        ).count()
+
+        emv_fallback = recent_txns >= 2   # customer normally uses chip but this txn was swiped
+
+        return (
+            "EMV FALLBACK DETECTION\n"
+            f"  Case ID                : {case_id}\n"
+            f"  Current Entry Mode     : SWIPE\n"
+            f"  Prior Chip Transactions: {recent_txns} (last 90 days)\n"
+            f"  EMV Fallback Detected  : {'Yes — ALERT' if emv_fallback else 'No'}\n"
+            f"  Reason                 : {'Customer normally uses chip/tap but this transaction was swiped — possible chip bypass or skimming device.' if emv_fallback else 'Insufficient chip history to confirm fallback pattern.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"detect_emv_fallback failed: {exc}")
+        return f"EMV FALLBACK DETECTION\n  Error: {exc}\n  EMV Fallback Detected: No"
+    finally:
+        db.close()
+
+
+@tool
+def analyze_contactless_abuse(case_id: str) -> str:
+    """Detect contactless tap abuse — multiple small-value NFC transactions in a short window.
+    Lost or stolen cards can be used for repeated contactless payments without PIN.
+    Only runs when card_entry_mode = CONTACTLESS_TAP."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, Transaction
+    from datetime import timedelta
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "CONTACTLESS ABUSE ANALYSIS\n  Contactless Abuse Detected: No\n  Reason: Case not found."
+
+        txn = db.query(Transaction).filter(Transaction.transaction_id == case.transaction_id).first()
+        if not txn:
+            return "CONTACTLESS ABUSE ANALYSIS\n  Contactless Abuse Detected: No\n  Reason: Transaction not found."
+
+        mode = (txn.card_entry_mode or "UNKNOWN").upper()
+        if mode != "CONTACTLESS_TAP":
+            return (
+                "CONTACTLESS ABUSE ANALYSIS\n"
+                f"  Entry Mode           : {mode}\n"
+                "  Contactless Abuse Detected: No\n"
+                "  Reason               : Not applicable — transaction was not a contactless tap."
+            )
+
+        # Check for repeated small-value taps in last 1 hour
+        cutoff = txn.transaction_date - timedelta(hours=1)
+        recent_taps = db.query(Transaction).filter(
+            Transaction.customer_id == case.customer_id.upper(),
+            Transaction.transaction_date >= cutoff,
+            Transaction.transaction_date <= txn.transaction_date,
+            Transaction.card_entry_mode == "CONTACTLESS_TAP",
+            Transaction.amount < 1000,   # small-value taps
+        ).all()
+
+        count       = len(recent_taps)
+        abuse       = count >= 4   # 4+ taps in 1 hour is suspicious
+        avg_amount  = round(sum(t.amount for t in recent_taps) / max(count, 1), 2)
+
+        return (
+            "CONTACTLESS ABUSE ANALYSIS\n"
+            f"  Case ID                      : {case_id}\n"
+            f"  Entry Mode                   : CONTACTLESS_TAP\n"
+            f"  Small Taps in Last Hour      : {count}\n"
+            f"  Average Tap Amount           : ₹{avg_amount}\n"
+            f"  Contactless Abuse Detected   : {'Yes — ALERT' if abuse else 'No'}\n"
+            f"  Reason                       : {'Repeated small-value contactless taps — possible stolen/lost card abuse without PIN.' if abuse else 'Contactless usage within normal parameters.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"analyze_contactless_abuse failed: {exc}")
+        return f"CONTACTLESS ABUSE ANALYSIS\n  Error: {exc}\n  Contactless Abuse Detected: No"
+    finally:
+        db.close()
+
+
 # ── Bank-Verified Account Intelligence Tools ──────────────────────────────────
 
 # Weighted ATO event types — higher weight = stronger signal when appearing before a transaction
@@ -2932,6 +3099,10 @@ TOOL_REGISTRY: dict = {
     "evaluate_mcc_risk":                   evaluate_mcc_risk,
     "analyze_decline_success_pattern":     analyze_decline_success_pattern,
     "check_refund_reversal_absence":       check_refund_reversal_absence,
+    # Card Entry Mode Intelligence
+    "analyze_card_entry_mode_risk":        analyze_card_entry_mode_risk,
+    "detect_emv_fallback":                 detect_emv_fallback,
+    "analyze_contactless_abuse":           analyze_contactless_abuse,
     # UPI intelligence
     "analyze_new_beneficiary_risk":           analyze_new_beneficiary_risk,
     "detect_upi_collect_request_fraud":       detect_upi_collect_request_fraud,
