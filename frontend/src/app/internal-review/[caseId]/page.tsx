@@ -1805,7 +1805,6 @@ export default function CaseWorkspace() {
               FRAUD_AGENT:      { label: "Fraud Review",         color: "#FCA5A5", action: "Conduct fraud investigation and verify transaction authenticity" },
               MERCHANT_AGENT:   { label: "Merchant Verification", color: "#FCD34D", action: "Contact merchant and request transaction confirmation" },
               EVIDENCE_AGENT:   { label: "Evidence Verification", color: "#60A5FA", action: "Verify submitted documents and supporting evidence" },
-              COMPLIANCE_AGENT: { label: "Compliance Review",    color: "#A78BFA", action: "Complete compliance assessment and regulatory review" },
             };
 
             const operationalStatus: Record<string, string> = {

@@ -61,7 +61,7 @@ _BASE_HOURS = {
     "LOW": 1, "MEDIUM": 2, "HIGH": 4, "CRITICAL": 8,
 }
 
-_AGENT_ORDER = ["FRAUD_AGENT", "EVIDENCE_AGENT", "MERCHANT_AGENT", "COMPLIANCE_AGENT"]
+_AGENT_ORDER = ["FRAUD_AGENT", "EVIDENCE_AGENT", "MERCHANT_AGENT"]
 
 
 def _read_case(case_id: str):
@@ -205,11 +205,7 @@ def determine_required_agents(case_id: str) -> str:
             required.append("MERCHANT_AGENT")
             reasons.append(f"MERCHANT_AGENT: category={category}")
 
-        # COMPLIANCE_AGENT
-        compliance_triggers = [t for t in c["risk_tags"] if t in _COMPLIANCE_TAGS]
-        if compliance_triggers:
-            required.append("COMPLIANCE_AGENT")
-            reasons.append(f"COMPLIANCE_AGENT: risk_tags={compliance_triggers}")
+        # COMPLIANCE_AGENT removed — compliance review is handled by analysts manually
 
         reasons_str = "\n".join(f"    • {r}" for r in reasons) if reasons else "    • No specialist agents required"
         return (
