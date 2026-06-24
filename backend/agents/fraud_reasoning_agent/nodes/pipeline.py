@@ -813,23 +813,27 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
             elif "NO_CLAIMS" in _l:        identity_verified_status = "NO_CLAIMS"
             elif "VERIFIED" in _l and "UN" not in _l: identity_verified_status = "VERIFIED"
 
-    # Calibrated universal weights — influential but don't overpower channel signals
-    if prior_fraud_victim:                      prob += 0.10
-    if ato_risk_level == "CRITICAL":            prob += 0.30
-    elif ato_risk_level == "HIGH":              prob += 0.20
-    if mule_suspected:                          prob += 0.30
-    if case_similarity_high:                    prob += 0.15
-    if fraud_network:                           prob += 0.20
-    if rapid_dispute:                           prob += 0.15
+    # ── Universal score: capped at 0.60 so channel tools always matter ──────────
+    # Legacy form-based ATO (detect_account_takeover_pattern) is NARRATIVE ONLY —
+    # no direct score. Bank-verified events are the sole source for ATO scoring.
+    universal_prob = 0.0
+    if prior_fraud_victim:                      universal_prob += 0.10
+    if mule_suspected:                          universal_prob += 0.30
+    if case_similarity_high:                    universal_prob += 0.15
+    if fraud_network:                           universal_prob += 0.20
+    if rapid_dispute:                           universal_prob += 0.15
 
-    # Bank-verified account intelligence (primary source — overrides form-based where available)
-    if bank_ato_risk == "CRITICAL":             prob += 0.30
-    elif bank_ato_risk == "HIGH":               prob += 0.20
-    elif bank_ato_risk == "MEDIUM":             prob += 0.10
-    if bank_device_critical:                    prob += 0.40
-    elif bank_device_high:                      prob += 0.30
-    if bank_mobile_changed:                     prob += 0.35
-    if bank_new_bene:                           prob += 0.10
+    # Bank-verified account intelligence
+    if bank_ato_risk == "CRITICAL":             universal_prob += 0.30
+    elif bank_ato_risk == "HIGH":               universal_prob += 0.20
+    elif bank_ato_risk == "MEDIUM":             universal_prob += 0.10
+    if bank_device_critical:                    universal_prob += 0.40
+    elif bank_device_high:                      universal_prob += 0.30
+    if bank_mobile_changed:                     universal_prob += 0.35
+    if bank_new_bene:                           universal_prob += 0.10
+
+    # Cap universal at 0.60 — channel tools must still contribute meaningfully
+    prob += min(0.60, universal_prob)
 
     fraud_probability = round(max(0.00, min(1.00, prob)), 2)
 

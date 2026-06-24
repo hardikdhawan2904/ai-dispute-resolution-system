@@ -2559,8 +2559,20 @@ def detect_rapid_case_creation(case_id: str) -> str:
 
 # ── Bank-Verified Account Intelligence Tools ──────────────────────────────────
 
-_ATO_EVENT_TYPES = {"PASSWORD_RESET", "DEVICE_REGISTERED", "MOBILE_NUMBER_CHANGED",
-                    "BENEFICIARY_ADDED", "SIM_SWAP_DETECTED"}
+# Weighted ATO event types — higher weight = stronger signal when appearing before a transaction
+_ATO_EVENT_WEIGHTS: dict[str, float] = {
+    "SIM_SWAP_DETECTED":     3.0,   # telecom-level takeover — very strong
+    "ACCOUNT_LOCKED":        2.5,   # brute-force or automated attack
+    "FRAUD_ALERT":           2.5,   # bank's own system flagged suspicious activity
+    "MOBILE_NUMBER_CHANGED": 2.0,   # intercept OTP setup
+    "DEVICE_TRUST_CHANGED":  1.5,   # bank downgraded device trust
+    "DEVICE_REGISTERED":     1.5,   # new device added before transaction
+    "BENEFICIARY_ADDED":     1.5,   # new payee added before large transfer
+    "DEVICE_REMOVED":        1.0,   # old device removed (often precedes new one)
+    "PASSWORD_RESET":        1.0,   # common alone; strong in combination
+    "EMAIL_CHANGED":         1.0,   # contact change that could intercept alerts
+}
+_ATO_EVENT_TYPES = set(_ATO_EVENT_WEIGHTS.keys())
 
 
 def _parse_txn_datetime(transaction_date: str, transaction_time: str):
@@ -2602,23 +2614,29 @@ def verify_account_takeover_sequence(case_id: str) -> str:
                 "  Assessment       : No bank-observed ATO events in the 30-day window."
             )
 
+        # Weighted scoring — not just count, but severity of events
         verified = [e for e in events if e["event_type"] in _ATO_EVENT_TYPES]
-        verified_types = list(set(e["event_type"] for e in verified))
-        n = len(verified_types)
+        verified_types = list({e["event_type"] for e in verified})
+        weight_total = sum(_ATO_EVENT_WEIGHTS.get(et, 1.0) for et in verified_types)
 
-        if n >= 3:   ato_risk = "CRITICAL"
-        elif n == 2: ato_risk = "HIGH"
-        elif n == 1: ato_risk = "MEDIUM"
-        else:        ato_risk = "LOW"
+        # Sorted by weight descending for display
+        verified_types_sorted = sorted(verified_types, key=lambda t: _ATO_EVENT_WEIGHTS.get(t, 1.0), reverse=True)
 
-        events_str = ", ".join(verified_types) if verified_types else "None"
+        # Risk based on weighted score (not raw count)
+        if weight_total >= 5.0:   ato_risk = "CRITICAL"
+        elif weight_total >= 3.0: ato_risk = "HIGH"
+        elif weight_total >= 1.0: ato_risk = "MEDIUM"
+        else:                     ato_risk = "LOW"
+
+        events_str = ", ".join(verified_types_sorted) if verified_types_sorted else "None"
         return (
             "ATO SEQUENCE ANALYSIS\n"
             f"  Customer ID      : {case.customer_id}\n"
             f"  ATO Risk         : {ato_risk}\n"
-            f"  Verified Events  : {n} ({events_str})\n"
+            f"  Verified Events  : {len(verified_types)} ({events_str})\n"
+            f"  ATO Weight Score : {round(weight_total, 1)}\n"
             f"  Verification Mode: BANK_VERIFIED\n"
-            f"  Assessment       : {'ATO sequence detected in bank records — ' + str(n) + ' event type(s) confirmed.' if n > 0 else 'No ATO sequence in bank records.'}"
+            f"  Assessment       : {'ATO sequence detected in bank records — weighted score ' + str(round(weight_total,1)) + '.' if weight_total > 0 else 'No ATO sequence in bank records.'}"
         )
     except Exception as exc:
         agent_logger.warning(f"verify_account_takeover_sequence failed: {exc}")

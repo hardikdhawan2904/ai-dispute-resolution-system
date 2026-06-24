@@ -100,6 +100,16 @@ Customer-submitted form flags (bank impersonation, OTP shared, remote access, et
 are used for your fraud_reasoning narrative but DO NOT affect the numeric score.
 The server will override your fraud_probability with the deterministic DB-computed value.
 
+LEGACY ATO TOOL (detect_account_takeover_pattern) — NARRATIVE ONLY:
+The form-based ATO tool output (password_reset_before, new_device, sim_swap flags)
+must NOT be used to justify adding to fraud_probability in your reasoning.
+Use it only for investigation context. Bank-verified events from verify_account_takeover_sequence
+are the authoritative ATO source.
+
+UNIVERSAL SCORE CAP: Universal signals are capped at 0.60 total.
+Channel-specific signals (device fingerprint, geovelocity, card velocity, UPI tools, ATM tools)
+always contribute on top of the universal cap.
+
 Fraud Probability (0.0 to 1.0):
 - Start at 0.0
 - Add +0.15 if dispute category is "Unauthorized Transaction" (customer asserts fraud outright — base lift applied before any anomaly signals)
