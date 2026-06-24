@@ -130,3 +130,4 @@ def trigger_communication_async(
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
+

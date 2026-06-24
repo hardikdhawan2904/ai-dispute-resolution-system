@@ -395,3 +395,4 @@ INSTRUCTION:
 {instr.strip()}
 
 Generate the email now. Return ONLY valid JSON with keys "subject" and "body"."""
+

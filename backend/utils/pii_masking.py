@@ -66,3 +66,4 @@ def mask_free_text(text: str) -> str:
     for pattern, replacement in _PATTERNS:
         text = pattern.sub(replacement, text)
     return text
+

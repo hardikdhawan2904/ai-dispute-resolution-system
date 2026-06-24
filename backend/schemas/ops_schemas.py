@@ -82,3 +82,4 @@ class OpsAnalyticsResponse(BaseModel):
     evidence_reviews_completed: int = 0
     blocked_investigations:     int = 0
     avg_evidence_completeness:  float = 0.0
+

@@ -220,3 +220,4 @@ def _build_human_message(a1: dict, tool_results: dict) -> str:
         f"{docs_section}\n"
         + tool_section
     )
+

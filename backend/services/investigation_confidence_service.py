@@ -178,3 +178,4 @@ def _coverage_score(coverage: dict) -> float:
     covered = sum(1 for v in coverage.values() if v)
     total   = len(coverage)
     return round(covered / total, 2) if total > 0 else 0.50
+

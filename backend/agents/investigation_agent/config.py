@@ -39,3 +39,4 @@ def get_agent_tool_names() -> List[str]:
 def get_llm_config() -> dict:
     """Return the LLM block (model, temperature, max_tokens, etc.)."""
     return load_agent_config()["agent"]["llm"]
+

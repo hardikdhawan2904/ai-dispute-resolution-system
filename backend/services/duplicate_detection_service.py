@@ -55,3 +55,4 @@ def find_duplicate(
                 return c.case_id
 
     return None
+

@@ -803,3 +803,4 @@ def _safe_case_dict(case: dict) -> dict:
         "fraud_risk_level":      case.get("fraud_risk_level") if case.get("fraud_risk_level") is not None else "LOW",
         "evidence_assessment":   case.get("evidence_assessment"),
     }
+

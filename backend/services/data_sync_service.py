@@ -256,3 +256,4 @@ def _build_resolution_text(case: DisputeCase) -> str:
             or f"Dispute rejected. Insufficient evidence to support {case.dispute_category} claim."
         )
     return case.manual_review_reason or "Case closed."
+

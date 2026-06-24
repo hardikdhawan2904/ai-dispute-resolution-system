@@ -45,3 +45,4 @@ def get_notes(case_id: str, db: Session, include_internal: bool = True) -> List[
     if not include_internal:
         q = q.filter(CaseNote.is_internal == False)
     return [n.to_dict() for n in q.order_by(CaseNote.created_at).all()]
+

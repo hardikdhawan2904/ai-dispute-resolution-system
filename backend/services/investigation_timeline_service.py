@@ -77,3 +77,4 @@ def _actor_type(actor: str | None) -> str:
     if actor in ("system", "ai", "workflow"):
         return "system"
     return "analyst"
+

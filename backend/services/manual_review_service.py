@@ -19,7 +19,7 @@ from typing import List, Tuple
 _FRAUD_SIGNAL_TAGS = {
     "POSSIBLE_FRAUD",
     "SUSPICIOUS_BEHAVIOR",
-    "OTP_VERIFIED",
+    "OTP_COMPROMISED",
     "DEVICE_MISMATCH",
     "VELOCITY_BREACH",
     "MERCHANT_BLACKLISTED",
@@ -116,3 +116,4 @@ def should_flag_manual_review(case: dict) -> Tuple[bool, str]:
         )
 
     return False, ""
+

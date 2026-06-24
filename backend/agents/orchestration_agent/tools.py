@@ -531,3 +531,4 @@ TOOL_REGISTRY: dict = {
     "estimate_workload":            estimate_workload,
     "determine_next_execution_step": determine_next_execution_step,
 }
+

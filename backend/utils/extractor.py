@@ -181,3 +181,4 @@ def _extract_xlsx(file_path: str) -> str:
     except Exception:
         return ""
     return "\n".join(rows)[:_MAX_CHARS]
+

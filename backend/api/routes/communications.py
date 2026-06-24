@@ -67,3 +67,4 @@ def send_communication(
         "case_id": case_id,
         "result":  result,
     }
+

@@ -123,3 +123,4 @@ def _persist_communication(
         db.rollback()
     finally:
         db.close()
+

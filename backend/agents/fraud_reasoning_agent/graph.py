@@ -34,3 +34,4 @@ def build_fraud_graph():
 
 
 fraud_graph = build_fraud_graph()
+

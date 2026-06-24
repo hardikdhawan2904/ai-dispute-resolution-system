@@ -553,3 +553,4 @@ def _fallback_case(
         "agent_metadata": agent_metadata,
         "metrics":        metrics,
     }
+

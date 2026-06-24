@@ -168,3 +168,4 @@ def compute_priority(case: dict) -> tuple[float, str]:
         label = "LOW"
 
     return round(score, 1), label
+

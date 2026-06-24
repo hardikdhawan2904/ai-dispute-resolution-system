@@ -200,3 +200,4 @@ Note: investigation_coverage is computed server-side from tool execution records
 - Do NOT give legal or financial advice
 - Return ONLY the JSON object — nothing else\
 """
+

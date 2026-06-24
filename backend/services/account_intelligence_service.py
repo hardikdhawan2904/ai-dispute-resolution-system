@@ -93,3 +93,4 @@ def get_beneficiary_status(customer_id: str, beneficiary_name: str, transaction_
         }
     except Exception:
         return {"known_beneficiary": False, "beneficiary_age_hours": None, "transaction_count": 0}
+

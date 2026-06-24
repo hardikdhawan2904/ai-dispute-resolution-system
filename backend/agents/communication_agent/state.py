@@ -12,3 +12,4 @@ class CommunicationAgentState(TypedDict):
     status:            str         # SENT / FAILED / PENDING
     error:             Optional[str]
     agent_start_time:  float
+

@@ -561,3 +561,4 @@ async def search_cases(body: CaseSearchRequest, db: Session = Depends(get_db)):
         limit=body.limit,
     )
     return result
+

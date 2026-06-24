@@ -46,3 +46,4 @@ def build_investigation_graph():
 
 
 investigation_graph = build_investigation_graph()
+

@@ -338,3 +338,4 @@ def _fallback_output(
         "investigation_confidence_factors": ["Automated investigation failed — confidence cannot be computed."],
         "created_at":     utc_now_iso(),
     }
+

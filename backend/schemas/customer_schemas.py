@@ -55,3 +55,4 @@ def to_customer_response(case: dict) -> CustomerDisputeResponse:
         created_at=case.get("created_at") or "",
         updated_at=case.get("updated_at"),
     )
+

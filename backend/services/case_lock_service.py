@@ -83,3 +83,4 @@ def check_lock(case_id: str, db: Session) -> dict:
         "locked_at": locked_at.isoformat() if locked_at else None,
         "expires_at": expires_at.isoformat() if expires_at else None,
     }
+

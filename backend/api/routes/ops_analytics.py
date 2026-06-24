@@ -12,3 +12,4 @@ router = APIRouter(prefix="/api/ops", tags=["Ops — Analytics"])
 @router.get("/analytics", response_model=OpsAnalyticsResponse)
 def ops_analytics(db: Session = Depends(get_db)):
     return get_ops_analytics(db)
+

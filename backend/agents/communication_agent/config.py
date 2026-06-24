@@ -15,3 +15,4 @@ def load_agent_config() -> dict:
 
 def get_llm_config() -> dict:
     return load_agent_config()["agent"]["llm"]
+

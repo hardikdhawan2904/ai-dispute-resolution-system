@@ -128,3 +128,4 @@ def get_ops_analytics(db: Session) -> dict:
         "blocked_investigations":      blocked_investigations,
         "avg_evidence_completeness":   avg_evidence_completeness,
     }
+

@@ -73,3 +73,4 @@ def admin_only(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] != Role.OPERATIONS_ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access only")
     return user
+

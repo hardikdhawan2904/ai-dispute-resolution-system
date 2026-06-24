@@ -3134,3 +3134,4 @@ TOOL_REGISTRY: dict = {
     "verify_new_beneficiary_activity":        verify_new_beneficiary_activity,
     "validate_customer_security_claims":      validate_customer_security_claims,
 }
+

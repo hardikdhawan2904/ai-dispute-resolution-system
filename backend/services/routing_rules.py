@@ -10,10 +10,11 @@ COMPLIANCE_TAGS: frozenset = frozenset({
     "SUSPICIOUS_BEHAVIOR",   # Unusual pattern detected
     "MERCHANT_BLACKLISTED",  # Known scam merchant — regulatory escalation needed
     "DEVICE_MISMATCH",       # Transaction from unrecognized device — AML/KYC review
-    "OTP_VERIFIED",          # Customer shared OTP — social engineering, compliance must review
+    "OTP_COMPROMISED",          # Customer shared OTP — social engineering, compliance must review
 })
 
 # FRIENDLY_FRAUD_RISK warrants a compliance review step in the investigation
 # workflow (WOA adds it) but does NOT route the case to the compliance analyst
 # queue — it stays in CHARGEBACK_TEAM / MERCHANT_DISPUTES.
 COMPLIANCE_AGENT_TAGS: frozenset = COMPLIANCE_TAGS | frozenset({"FRIENDLY_FRAUD_RISK"})
+

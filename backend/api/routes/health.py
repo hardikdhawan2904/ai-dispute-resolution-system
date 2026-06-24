@@ -15,3 +15,4 @@ def health_check():
         llm_provider="groq",
         llm_model=os.getenv("LLM_MODEL", "llama3-8b-8192"),
     )
+

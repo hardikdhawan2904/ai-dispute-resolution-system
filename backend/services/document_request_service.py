@@ -121,3 +121,4 @@ def get_requests(case_id: str, db: Session) -> List[dict]:
         .order_by(DocumentRequest.created_at)
         .all()
     ]
+

@@ -575,3 +575,4 @@ class Beneficiary(Base):
             "transaction_count": self.transaction_count,
             "trusted":           self.trusted,
         }
+

@@ -95,3 +95,4 @@ def log_workflow_event(
         extra_fields.update(extra)
 
     logger.info(f"[WORKFLOW] {event} @ {stage}", extra=extra_fields)
+

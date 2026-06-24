@@ -36,3 +36,4 @@ def get_agent_tool_names() -> List[str]:
 
 def get_llm_config() -> dict:
     return load_agent_config()["agent"]["llm"]
+

@@ -61,3 +61,4 @@ def send_email(subject: str, body: str, recipient: str) -> bool:
     except Exception as exc:
         api_logger.error(f"email_service: failed to send '{subject}' → {dest}: {exc}")
         return False
+

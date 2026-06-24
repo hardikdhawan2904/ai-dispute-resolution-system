@@ -100,3 +100,4 @@ def _audit(db, case_id, event_type, actor, message, payload):
         message=message,
         payload=payload,
     ))
+

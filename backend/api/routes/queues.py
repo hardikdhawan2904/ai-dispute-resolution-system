@@ -53,3 +53,4 @@ def queue_cases(
         "total": total,
         "cases": [c.to_dict() for c in cases],
     }
+

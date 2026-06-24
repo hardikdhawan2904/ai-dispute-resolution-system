@@ -130,3 +130,4 @@ def customer_get_dispute(
         raise HTTPException(status_code=403, detail="Access denied — this dispute does not belong to your account")
 
     return to_customer_response(case)
+

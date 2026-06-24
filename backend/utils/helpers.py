@@ -68,3 +68,4 @@ def extract_json_from_text(text: str) -> Optional[dict]:
             pass
 
     return None
+

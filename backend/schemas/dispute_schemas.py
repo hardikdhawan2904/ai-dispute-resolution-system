@@ -181,3 +181,4 @@ class HealthResponse(BaseModel):
     database: str
     llm_provider: str
     llm_model: str
+

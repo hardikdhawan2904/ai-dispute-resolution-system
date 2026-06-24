@@ -102,3 +102,4 @@ def assign_queue(case: dict) -> str:
 
 def all_queues() -> List[dict]:
     return [{"queue": q, "display": QUEUE_DISPLAY[q]} for q in _QUEUES]
+

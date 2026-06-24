@@ -13,7 +13,7 @@ _TAG_EXPLANATIONS = {
     "DUPLICATE_PAYMENT":         "A similar transaction was detected within a short time window for this account.",
     "FRIENDLY_FRAUD_RISK":       "Customer history or behaviour may indicate an illegitimate chargeback attempt.",
     "HIGH_PRIORITY_CASE":        "Case has been escalated to high priority based on risk assessment.",
-    "OTP_VERIFIED":              "Customer may have shared OTP with a third party — social engineering suspected.",
+    "OTP_COMPROMISED":              "Customer may have shared OTP with a third party — social engineering suspected.",
     "DEVICE_MISMATCH":           "Transaction device does not match the customer's registered devices.",
     "SUSPICIOUS_BEHAVIOR":       "Unusual account activity detected around the time of this transaction.",
     "CARD_NOT_PRESENT":          "Transaction was conducted without physical card — higher fraud risk.",
@@ -62,3 +62,4 @@ def get_investigation_summary(case: dict) -> str:
         parts.append("This case requires mandatory analyst review before resolution.")
 
     return " ".join(parts)
+

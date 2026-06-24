@@ -38,3 +38,4 @@ def me(user: dict = Depends(get_current_user)):
         role=user["role"].value,
         customer_id=user.get("customer_id"),
     )
+

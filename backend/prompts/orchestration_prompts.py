@@ -42,7 +42,7 @@ DO NOT call any tools — synthesise the provided results and produce your final
 | Duplicate Transaction, Merchant Dispute, Refund Not Received, Product Not Received, Subscription Abuse, Friendly Fraud | MERCHANT_AGENT |
 | evidence_match != true (false or null), required_documents present | EVIDENCE_AGENT |
 | ATM Cash Issue, Friendly Fraud, Other (always — structural requirement) | EVIDENCE_AGENT |
-| VELOCITY_BREACH, SUSPICIOUS_BEHAVIOR, MERCHANT_BLACKLISTED, DEVICE_MISMATCH, OTP_VERIFIED, FRIENDLY_FRAUD_RISK, RECURRING_DISPUTE, DUPLICATE_PAYMENT | COMPLIANCE_AGENT |
+| VELOCITY_BREACH, SUSPICIOUS_BEHAVIOR, MERCHANT_BLACKLISTED, DEVICE_MISMATCH, OTP_COMPROMISED, FRIENDLY_FRAUD_RISK, RECURRING_DISPUTE, DUPLICATE_PAYMENT | COMPLIANCE_AGENT |
 
 Multiple conditions always activate multiple agents. FRAUD_AGENT runs first when present.
 
@@ -122,3 +122,4 @@ Return ONLY the following JSON structure with no prose, no markdown, no explanat
 - Do NOT add fields not in the schema above
 - Do NOT fabricate case data — only use what the tools returned
 """
+

@@ -51,7 +51,7 @@ Risk Tags — strict conditions below. DO NOT apply a tag unless its exact condi
   DUPLICATE_PAYMENT         — ONLY when customer explicitly states the same charge appeared multiple times, or transaction context tool confirms duplicate.
   FRIENDLY_FRAUD_RISK       — ONLY when customer claims goods were not received but evidence suggests delivery occurred, OR pattern of repeated disputes.
   HIGH_PRIORITY_CASE        — ONLY when priority is CRITICAL or HIGH per the priority matrix.
-  OTP_VERIFIED              — ONLY when customer comment explicitly mentions OTP was shared with someone.
+  OTP_COMPROMISED              — ONLY when customer comment explicitly mentions OTP was shared with someone.
   DEVICE_MISMATCH           — ONLY when customer reports transaction from an unknown/unregistered device.
   SUSPICIOUS_BEHAVIOR       — ONLY when assess_transaction_context tool flags unusual behavior not covered by other tags.
   CARD_NOT_PRESENT          — ONLY when transaction_type is online/e-commerce/card-not-present.
@@ -116,3 +116,4 @@ Created At : {created_at}
 
 All tools have been pre-computed — see results below. Produce your final JSON now.\
 """
+

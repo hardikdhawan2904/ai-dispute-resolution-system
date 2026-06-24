@@ -15,3 +15,4 @@ class InvestigationAgentState(TypedDict):
     agent_metadata:          dict       # agent identity: name, version, model, timestamp, duration_ms
     metrics:                 dict       # total_duration_ms, llm_calls, tool_calls, retry_count
     agent_start_time:        float      # wall-clock start set in run_investigation_agent before graph invoke
+

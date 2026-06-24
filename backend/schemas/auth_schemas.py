@@ -24,3 +24,4 @@ class UserInfo(BaseModel):
     name: str
     role: str
     customer_id: Optional[str] = None
+

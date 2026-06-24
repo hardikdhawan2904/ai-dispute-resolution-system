@@ -589,3 +589,4 @@ class DisputeService:
                 success=entry.get("success", True),
                 error_message=entry.get("details") if not entry.get("success") else None,
             ))
+

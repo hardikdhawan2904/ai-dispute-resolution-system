@@ -213,7 +213,7 @@ def get_required_documents(
 
     if risk_tags:
         tags_upper = [t.upper() for t in risk_tags]
-        if "OTP_VERIFIED" in tags_upper and "OTP transaction logs" not in base:
+        if "OTP_COMPROMISED" in tags_upper and "OTP transaction logs" not in base:
             base.append("OTP transaction logs")
         # Only require passport when transaction type is genuinely International,
         # not just because Agent 1 added the risk tag on a domestic transaction
@@ -284,3 +284,4 @@ def check_documents_sufficient(
     required  = get_required_documents(category, fraud_selected, amount)
     min_count = minimum_document_count(category, fraud_selected, amount)
     return document_count >= min_count, required
+

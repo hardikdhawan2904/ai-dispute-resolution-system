@@ -153,3 +153,4 @@ def _build_risk_tags(fraud: bool) -> list:
     if fraud:
         tags.append("POSSIBLE_FRAUD")
     return tags
+

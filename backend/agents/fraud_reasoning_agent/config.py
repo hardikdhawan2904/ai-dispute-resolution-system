@@ -32,3 +32,4 @@ def get_agent_tool_names() -> List[str]:
 def get_llm_config() -> dict:
     """Return the LLM block."""
     return load_agent_config()["agent"]["llm"]
+

@@ -526,3 +526,4 @@ TOOL_REGISTRY: dict = {
     "assess_evidence_strength":        assess_evidence_strength,
     "determine_next_document_request": determine_next_document_request,
 }
+

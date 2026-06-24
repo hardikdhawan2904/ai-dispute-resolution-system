@@ -95,3 +95,4 @@ def match_document_type(
         return best_type
 
     return None   # no confident match
+

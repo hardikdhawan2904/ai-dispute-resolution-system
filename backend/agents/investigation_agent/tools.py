@@ -489,3 +489,4 @@ TOOL_REGISTRY: dict = {
     "find_duplicate_transaction": find_duplicate_transaction,
     "lookup_related_cases":       lookup_related_cases,
 }
+

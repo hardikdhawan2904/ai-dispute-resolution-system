@@ -252,3 +252,4 @@ for etype, cnt in sorted(dist, key=lambda x: -x[1]):
 db.close()
 print()
 print("Done. Fraud demo cases (CUST-00002) preserved unchanged.")
+
