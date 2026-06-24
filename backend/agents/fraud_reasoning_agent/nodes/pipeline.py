@@ -910,6 +910,19 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
 
     if "fraud_reasoning" in parsed and isinstance(parsed["fraud_reasoning"], list):
         parsed["fraud_reasoning"] = _clean_bullets(parsed["fraud_reasoning"], channel, merchant_risk_level)
+
+    # Also clean the summary paragraphs — LLM sometimes hallucinates merchant tier in summary
+    def _clean_summary(text: str) -> str:
+        if not text: return text
+        text = _weight_pattern.sub("", text)
+        if merchant_risk_level and _merchant_tier_pattern.search(text):
+            text = _merchant_tier_pattern.sub(f"merchant risk tier: {merchant_risk_level}", text)
+        return text.strip()
+
+    if "fraud_summary" in parsed:
+        parsed["fraud_summary"] = _clean_summary(parsed.get("fraud_summary", ""))
+    if "trust_summary" in parsed:
+        parsed["trust_summary"] = _clean_summary(parsed.get("trust_summary", ""))
     if "trust_reasoning" in parsed and isinstance(parsed["trust_reasoning"], list):
         parsed["trust_reasoning"] = _clean_bullets(parsed["trust_reasoning"], channel, merchant_risk_level)
 
