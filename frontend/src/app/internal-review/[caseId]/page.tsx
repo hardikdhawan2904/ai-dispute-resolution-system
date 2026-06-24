@@ -308,7 +308,6 @@ export default function CaseWorkspace() {
             <InfoRow label="Category"        value={caseData.dispute_category || "—"} />
             <InfoRow label="Filed On"        value={formatDate(caseData.created_at)} />
             <InfoRow label="Last Updated"    value={caseData.updated_at ? formatDate(caseData.updated_at) : "—"} />
-            {caseData.assigned_queue && <InfoRow label="Assigned Queue" value={caseData.assigned_queue.replace(/_/g, " ")} />}
           </CollapsibleSection>
 
           <CollapsibleSection
@@ -2290,10 +2289,10 @@ export default function CaseWorkspace() {
                 {caseData.priority}
               </span>
             </div>
-            {caseData.assigned_queue && (
+            {false && (
               <div style={{ marginTop: "0.5rem" }}>
                 <Label>Assigned Queue</Label>
-                <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>{caseData.assigned_queue.replace(/_/g, " ")}</span>
+                <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>{caseData.assigned_queue?.replace(/_/g, " ")}</span>
               </div>
             )}
             {caseData.fraud_suspicion && (
