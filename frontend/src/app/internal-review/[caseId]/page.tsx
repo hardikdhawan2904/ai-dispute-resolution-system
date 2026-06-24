@@ -879,10 +879,12 @@ export default function CaseWorkspace() {
                 {/* ── Universal Fraud Intelligence ──────────────────────── */}
                 {(() => {
                   const rows = [
-                    { label: "Prior Fraud Victim",       value: toolSignals.prior_fraud_victim ? "Detected" : "Clear", flag: !!toolSignals.prior_fraud_victim, desc: "Customer has been a fraud victim before — repeat targeting risk" },
-                    { label: "Account Takeover Risk",    value: toolSignals.ato_risk_level ?? "LOW",                   flag: toolSignals.ato_risk_level === "HIGH" || toolSignals.ato_risk_level === "CRITICAL", desc: "Password reset + device change + SIM swap combination" },
-                    { label: "Mule Account Suspected",   value: toolSignals.mule_suspected ? "Detected" : "Clear",    flag: !!toolSignals.mule_suspected,    desc: "Rapid fund pass-through pattern — possible money mule" },
-                    { label: "Historical Case Similarity", value: toolSignals.case_similarity_high ? "Detected" : "Clear", flag: !!toolSignals.case_similarity_high, desc: "Current fraud pattern matches known historical fraud cases" },
+                    { label: "Prior Fraud Victim",        value: toolSignals.prior_fraud_victim ? "Detected" : "Clear",     flag: !!toolSignals.prior_fraud_victim,     desc: "Customer has been a fraud victim before — repeat targeting risk" },
+                    { label: "Account Takeover Risk",     value: toolSignals.ato_risk_level ?? "LOW",                        flag: toolSignals.ato_risk_level === "HIGH" || toolSignals.ato_risk_level === "CRITICAL", desc: "Password reset + device change + SIM swap combination" },
+                    { label: "Mule Account Suspected",    value: toolSignals.mule_suspected ? "Detected" : "Clear",          flag: !!toolSignals.mule_suspected,            desc: "Rapid fund pass-through pattern — possible money mule" },
+                    { label: "Historical Case Similarity",value: toolSignals.case_similarity_high ? "Detected" : "Clear",    flag: !!toolSignals.case_similarity_high,      desc: "Current fraud pattern matches known historical fraud cases" },
+                    { label: "Linked Fraud Network",      value: toolSignals.fraud_network_detected ? "Detected" : "Clear",  flag: !!toolSignals.fraud_network_detected,    desc: "Same contact/beneficiary appears across multiple customers' disputes" },
+                    { label: "Rapid Dispute Pattern",     value: toolSignals.rapid_dispute_pattern ? "Detected" : "Clear",   flag: !!toolSignals.rapid_dispute_pattern,     desc: "3+ disputes in 30 days or 5+ in 90 days — possible friendly fraud" },
                   ];
                   const visible = rows.filter(r => r.flag);
                   if (visible.length === 0) return null;

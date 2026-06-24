@@ -143,6 +143,8 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
         "detect_account_takeover_pattern":        (TOOL_REGISTRY["detect_account_takeover_pattern"],        {"case_id": case_id}),
         "analyze_mule_account_indicators":        (TOOL_REGISTRY["analyze_mule_account_indicators"],        {"case_id": case_id}),
         "detect_historical_case_similarity":      (TOOL_REGISTRY["detect_historical_case_similarity"],      {"case_id": case_id}),
+        "detect_linked_fraud_network":            (TOOL_REGISTRY["detect_linked_fraud_network"],            {"case_id": case_id}),
+        "detect_rapid_case_creation":             (TOOL_REGISTRY["detect_rapid_case_creation"],             {"case_id": case_id}),
     }
 
     if channel == "UPI":
@@ -764,6 +766,8 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
     _ato_report  = str(tool_results.get("detect_account_takeover_pattern", ""))
     _mule_report = str(tool_results.get("analyze_mule_account_indicators", ""))
     _hcs_report  = str(tool_results.get("detect_historical_case_similarity", ""))
+    _lfn_report  = str(tool_results.get("detect_linked_fraud_network", ""))
+    _rcc_report  = str(tool_results.get("detect_rapid_case_creation", ""))
 
     prior_fraud_victim = any("Victim Score" in l and ("HIGH" in l or "MEDIUM" in l) for l in _hfv_report.split("\n"))
     ato_risk_level     = "LOW"
@@ -772,14 +776,19 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
             if "CRITICAL" in _l: ato_risk_level = "CRITICAL"
             elif "HIGH" in _l:   ato_risk_level = "HIGH"
             elif "MEDIUM" in _l: ato_risk_level = "MEDIUM"
-    mule_suspected      = any("Mule Account Suspected" in l and "Yes" in l for l in _mule_report.split("\n"))
+    mule_suspected       = any("Mule Account Suspected" in l and "Yes" in l for l in _mule_report.split("\n"))
     case_similarity_high = any("Pattern Risk" in l and "HIGH" in l for l in _hcs_report.split("\n"))
+    fraud_network        = any("Fraud Network Detected" in l and "Yes" in l for l in _lfn_report.split("\n"))
+    rapid_dispute        = any("Repeat Dispute Pattern" in l and "Yes" in l for l in _rcc_report.split("\n"))
 
-    if prior_fraud_victim:                      prob += 0.15
-    if ato_risk_level == "CRITICAL":            prob += 0.40
-    elif ato_risk_level == "HIGH":              prob += 0.25
-    if mule_suspected:                          prob += 0.40
-    if case_similarity_high:                    prob += 0.20
+    # Calibrated universal weights — influential but don't overpower channel signals
+    if prior_fraud_victim:                      prob += 0.10
+    if ato_risk_level == "CRITICAL":            prob += 0.30
+    elif ato_risk_level == "HIGH":              prob += 0.20
+    if mule_suspected:                          prob += 0.30
+    if case_similarity_high:                    prob += 0.15
+    if fraud_network:                           prob += 0.20
+    if rapid_dispute:                           prob += 0.15
 
     fraud_probability = round(max(0.00, min(1.00, prob)), 2)
 
@@ -906,6 +915,8 @@ def finalize_node(state: FraudReasoningAgentState) -> dict:
         "ato_risk_level":             ato_risk_level,
         "mule_suspected":             mule_suspected,
         "case_similarity_high":       case_similarity_high,
+        "fraud_network_detected":     fraud_network,
+        "rapid_dispute_pattern":      rapid_dispute,
     }
 
     log_workflow_event(

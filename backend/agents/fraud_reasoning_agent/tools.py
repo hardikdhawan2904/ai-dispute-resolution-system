@@ -2414,6 +2414,149 @@ def detect_historical_case_similarity(case_id: str) -> str:
         db.close()
 
 
+# ── Tool: Linked Fraud Network Detection ─────────────────────────────────────
+
+@tool
+def detect_linked_fraud_network(case_id: str) -> str:
+    """Detect fraud network connections by checking whether the same phone, email,
+    device ID, or beneficiary (merchant) appears across multiple customers' disputes.
+    Identifies organised fraud rings where different victims were targeted by the same actor."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, DisputeHistory
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "LINKED FRAUD NETWORK\n  Error: Case not found\n  Fraud Network Detected: No"
+
+        phone    = (case.phone or "").strip()
+        email    = (case.email or "").strip().lower()
+        merchant = (case.merchant or "").strip().lower()
+        meta     = case.transaction_metadata or {}
+        device_id = (meta.get("device_id") or "").strip()
+
+        linked_cases: set[str] = set()
+
+        # Check same phone across other disputes
+        if phone:
+            matches = db.query(DisputeCase).filter(
+                DisputeCase.phone == phone,
+                DisputeCase.case_id != case_id.upper(),
+            ).all()
+            for m in matches:
+                linked_cases.add(m.case_id)
+
+        # Check same email
+        if email:
+            matches = db.query(DisputeCase).filter(
+                DisputeCase.email.ilike(email),
+                DisputeCase.case_id != case_id.upper(),
+            ).all()
+            for m in matches:
+                linked_cases.add(m.case_id)
+
+        # Check same beneficiary (merchant) across other customers
+        if merchant:
+            matches = db.query(DisputeCase).filter(
+                DisputeCase.merchant.ilike(f"%{merchant}%"),
+                DisputeCase.customer_id != case.customer_id,
+            ).all()
+            for m in matches:
+                linked_cases.add(m.case_id)
+            # Also check dispute history
+            hist = db.query(DisputeHistory).filter(
+                DisputeHistory.customer_id != case.customer_id,
+            ).all()
+            for h in hist:
+                if merchant in (h.merchant_id or "").lower():
+                    linked_cases.add(h.case_id)
+
+        count = len(linked_cases)
+        network_detected = count >= 3
+
+        risk = "HIGH" if count >= 5 else "MEDIUM" if count >= 3 else "LOW"
+
+        return (
+            "LINKED FRAUD NETWORK\n"
+            f"  Case ID              : {case_id}\n"
+            f"  Linked Cases Found   : {count}\n"
+            f"  Fraud Network Detected: {'Yes — ALERT' if network_detected else 'No'}\n"
+            f"  Network Risk         : {risk}\n"
+            f"  Assessment           : {'Shared contact or beneficiary pattern across {count} other disputes — possible organised fraud ring.' if network_detected else 'No significant network connections detected.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"detect_linked_fraud_network failed: {exc}")
+        return f"LINKED FRAUD NETWORK\n  Error: {exc}\n  Fraud Network Detected: No"
+    finally:
+        db.close()
+
+
+# ── Tool: Rapid Case Creation Pattern ────────────────────────────────────────
+
+@tool
+def detect_rapid_case_creation(case_id: str) -> str:
+    """Detect customers who file disputes at an unusually high rate — a strong indicator
+    of friendly fraud (fabricated disputes to extract refunds) or systematic abuse."""
+    from database.database import SessionLocal
+    from database.models import DisputeCase, DisputeHistory
+    from datetime import datetime, timezone, timedelta
+
+    db = SessionLocal()
+    try:
+        case = db.query(DisputeCase).filter(DisputeCase.case_id == case_id.upper()).first()
+        if not case:
+            return "RAPID CASE CREATION\n  Error: Case not found\n  Repeat Dispute Pattern: No"
+
+        customer_id = case.customer_id.upper()
+        now = datetime.now(timezone.utc)
+
+        # Count disputes in last 30 days (live + history)
+        cutoff_30 = now - timedelta(days=30)
+        cutoff_90 = now - timedelta(days=90)
+
+        def _count(days: int) -> int:
+            cutoff = now - timedelta(days=days)
+            live = db.query(DisputeCase).filter(
+                DisputeCase.customer_id == customer_id,
+                DisputeCase.case_id != case_id.upper(),
+                DisputeCase.created_at >= cutoff,
+            ).count()
+            hist = db.query(DisputeHistory).filter(
+                DisputeHistory.customer_id == customer_id,
+                DisputeHistory.created_at >= cutoff,
+            ).count()
+            return live + hist
+
+        count_30d = _count(30)
+        count_90d = _count(90)
+
+        # Threshold: 3+ in 30 days OR 5+ in 90 days
+        rapid_pattern = count_30d >= 3 or count_90d >= 5
+
+        if count_30d >= 3:
+            trigger = f"{count_30d} disputes in last 30 days (threshold: 3)"
+        elif count_90d >= 5:
+            trigger = f"{count_90d} disputes in last 90 days (threshold: 5)"
+        else:
+            trigger = "Within normal dispute frequency"
+
+        return (
+            "RAPID CASE CREATION REPORT\n"
+            f"  Customer ID          : {customer_id}\n"
+            f"  Disputes (Last 30d)  : {count_30d}\n"
+            f"  Disputes (Last 90d)  : {count_90d}\n"
+            f"  Repeat Dispute Pattern: {'Yes — ALERT' if rapid_pattern else 'No'}\n"
+            f"  Trigger              : {trigger}\n"
+            f"  Assessment           : {'Unusually high dispute frequency — review for friendly fraud or abuse pattern.' if rapid_pattern else 'Dispute frequency within normal range.'}"
+        )
+    except Exception as exc:
+        agent_logger.warning(f"detect_rapid_case_creation failed: {exc}")
+        return f"RAPID CASE CREATION\n  Error: {exc}\n  Repeat Dispute Pattern: No"
+    finally:
+        db.close()
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: dict = {
@@ -2464,4 +2607,6 @@ TOOL_REGISTRY: dict = {
     "detect_account_takeover_pattern":        detect_account_takeover_pattern,
     "analyze_mule_account_indicators":        analyze_mule_account_indicators,
     "detect_historical_case_similarity":      detect_historical_case_similarity,
+    "detect_linked_fraud_network":            detect_linked_fraud_network,
+    "detect_rapid_case_creation":             detect_rapid_case_creation,
 }
