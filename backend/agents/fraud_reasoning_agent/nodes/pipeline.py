@@ -88,6 +88,9 @@ def build_context_node(state: FraudReasoningAgentState) -> dict:
     if not device_id:
         device_id = meta.get("device_id") or d.get("device_id") or ""
 
+    # Note: evaluate_location_velocity now reads GPS coords directly from
+    # the transactions table internally — location string is passed for display only.
+
     # ── Channel routing ────────────────────────────────────────────────────────
     _txn = transaction_type.lower().strip()
     _UPI             = {"upi"}

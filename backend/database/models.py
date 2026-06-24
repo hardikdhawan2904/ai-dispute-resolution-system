@@ -106,6 +106,8 @@ class Transaction(Base):
     transaction_date  = Column(DateTime, nullable=False)
     status            = Column(String(32), default="Success")  # Success/Failed/Pending/Reversed
     location          = Column(String(128), nullable=True)
+    latitude          = Column(Float, nullable=True)   # GPS coordinates for accurate geovelocity
+    longitude         = Column(Float, nullable=True)
     device_id         = Column(String(64), nullable=True)
     is_disputed       = Column(Boolean, default=False)
     created_at        = Column(DateTime, default=_utc_now, nullable=False)
@@ -122,6 +124,8 @@ class Transaction(Base):
             "transaction_date": _iso(self.transaction_date),
             "status":           self.status,
             "location":         self.location,
+            "latitude":         self.latitude,
+            "longitude":        self.longitude,
             "device_id":        self.device_id,
             "is_disputed":      self.is_disputed,
             "created_at":       _iso(self.created_at),

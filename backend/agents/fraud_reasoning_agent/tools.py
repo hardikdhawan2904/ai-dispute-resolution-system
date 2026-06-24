@@ -175,99 +175,162 @@ def _same_city(loc_a: str, loc_b: str) -> bool:
     return city_a == city_b or city_a in city_b or city_b in city_a
 
 
-# ── Tool 2 — Location Velocity (Geovelocity) ──────────────────────────────────
+# ── GPS Haversine helper ───────────────────────────────────────────────────────
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate great-circle distance in km between two GPS coordinates."""
+    R = 6371.0
+    φ1, φ2 = math.radians(lat1), math.radians(lat2)
+    dφ = math.radians(lat2 - lat1)
+    dλ = math.radians(lon2 - lon1)
+    a = math.sin(dφ / 2) ** 2 + math.cos(φ1) * math.cos(φ2) * math.sin(dλ / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+# Speed thresholds (km/h)
+_SPEED_SUSPICIOUS   = 300   # faster than high-speed train — suspicious
+_SPEED_IMPOSSIBLE   = 900   # faster than commercial aircraft — impossible
+
+
+# ── Tool 2 — Location Velocity (GPS-based Geovelocity) ────────────────────────
 
 @tool
 def evaluate_location_velocity(customer_id: str, location: str, transaction_date: str, transaction_time: str) -> str:
-    """Evaluates geographic velocity between consecutive transactions.
-    Scans the ledger to see if the customer transacted from a different location in a time window
-    that is physically impossible (e.g. different locations within < 4 hours).
-    Use this to detect card cloning, location spoofing, or account takeover."""
+    """Evaluates geographic velocity using GPS coordinates (latitude/longitude) stored in
+    the transaction database. Calculates actual distance and implied travel speed between
+    consecutive transactions. Flags physically impossible or highly suspicious travel speeds.
+    Use this to detect card cloning, account takeover, and simultaneous multi-location fraud."""
     from database.database import SessionLocal
     from database.models import Transaction, DisputeCase
 
     db = SessionLocal()
     try:
-        if not _is_location_known(location):
+        # Parse current transaction datetime
+        try:
+            curr_dt_str = f"{transaction_date} {transaction_time}"
+            curr_dt = datetime.strptime(
+                curr_dt_str,
+                "%Y-%m-%d %H:%M" if len(transaction_time.split(":")) == 2 else "%Y-%m-%d %H:%M:%S"
+            ).replace(tzinfo=timezone.utc)
+        except Exception:
+            curr_dt = datetime.now(timezone.utc)
+
+        # Get current transaction's GPS coords from DB
+        exclude_id = _active_case_id.get()
+        curr_case  = None
+        curr_lat   = None
+        curr_lon   = None
+        curr_txn_id = None
+
+        if exclude_id:
+            curr_case = db.query(DisputeCase).filter(DisputeCase.case_id == exclude_id).first()
+        if curr_case:
+            curr_txn_id = curr_case.transaction_id
+            curr_txn = db.query(Transaction).filter(
+                Transaction.transaction_id == curr_txn_id
+            ).first()
+            if curr_txn:
+                curr_lat = curr_txn.latitude
+                curr_lon = curr_txn.longitude
+
+        if curr_lat is None or curr_lon is None:
             return (
                 "GEOGRAPHIC VELOCITY REPORT\n"
                 f"  Customer ID      : {customer_id}\n"
                 "  Geovelocity Risk : LOW\n"
                 "  Geovelocity Breach: No\n"
-                "  Assessment       : Insufficient location data — geovelocity check skipped."
+                "  Assessment       : No GPS coordinates on this transaction — geovelocity check skipped."
             )
 
-        # Parse current transaction time
-        try:
-            curr_dt_str = f"{transaction_date} {transaction_time}"
-            # Expecting YYYY-MM-DD HH:MM
-            if len(transaction_time.split(":")) == 2:
-                curr_dt = datetime.strptime(curr_dt_str, "%Y-%m-%d %H:%M")
-            else:
-                curr_dt = datetime.strptime(curr_dt_str, "%Y-%m-%d %H:%M:%S")
-            curr_dt = curr_dt.replace(tzinfo=timezone.utc)
-        except Exception:
-            curr_dt = datetime.now(timezone.utc)
-
-        # Query transactions around that time
-        txns = db.query(Transaction).filter(
-            Transaction.customer_id == customer_id.upper()
-        ).order_by(Transaction.transaction_date.desc()).all()
+        # Query all other transactions for this customer that have GPS data
+        txns = (
+            db.query(Transaction)
+            .filter(
+                Transaction.customer_id == customer_id.upper(),
+                Transaction.latitude    != None,
+                Transaction.longitude   != None,
+            )
+            .order_by(Transaction.transaction_date.desc())
+            .all()
+        )
 
         if not txns:
             return (
                 "GEOGRAPHIC VELOCITY REPORT\n"
                 f"  Customer ID      : {customer_id}\n"
                 "  Geovelocity Risk : LOW\n"
-                "  Assessment       : No transaction logs found to evaluate location history."
+                "  Assessment       : No GPS-tagged transaction history found."
             )
 
-        # Find closest prior and subsequent transaction (excluding current transaction if ID matches)
-        exclude_id = _active_case_id.get()
-        curr_case = None
-        if exclude_id:
-            curr_case = db.query(DisputeCase).filter(DisputeCase.case_id == exclude_id).first()
-
-        curr_txn_id = curr_case.transaction_id if curr_case else None
-
         geovelocity_breach = False
-        conflict_txn = None
-        time_diff_hours = 0.0
+        conflict_txn       = None
+        conflict_speed_kmh = 0.0
+        conflict_dist_km   = 0.0
+        time_diff_hours    = 0.0
+        risk               = "LOW"
 
         for t in txns:
             if curr_txn_id and t.transaction_id == curr_txn_id:
                 continue
-            
-            t_dt = t.transaction_date.replace(tzinfo=timezone.utc) if t.transaction_date.tzinfo is None else t.transaction_date
-            # Check if within 4 hours
-            diff = abs((curr_dt - t_dt).total_seconds()) / 3600.0
-            if diff < 4.0 and _is_location_known(t.location) and not _same_city(location, t.location):
+            if t.latitude is None or t.longitude is None:
+                continue
+
+            t_dt = t.transaction_date
+            if t_dt.tzinfo is None:
+                t_dt = t_dt.replace(tzinfo=timezone.utc)
+
+            diff_hours = abs((curr_dt - t_dt).total_seconds()) / 3600.0
+            if diff_hours < 0.001:   # same second — skip
+                continue
+
+            dist_km   = _haversine_km(curr_lat, curr_lon, t.latitude, t.longitude)
+            speed_kmh = dist_km / diff_hours
+
+            # Only flag if locations are meaningfully different (> 5 km)
+            if dist_km < 5:
+                continue
+
+            if speed_kmh >= _SPEED_IMPOSSIBLE:
                 geovelocity_breach = True
-                conflict_txn = t
-                time_diff_hours = round(diff, 2)
-                break
+                risk = "CRITICAL"
+                conflict_txn       = t
+                conflict_speed_kmh = round(speed_kmh, 0)
+                conflict_dist_km   = round(dist_km, 1)
+                time_diff_hours    = round(diff_hours, 2)
+                break   # worst case found
+            elif speed_kmh >= _SPEED_SUSPICIOUS and not geovelocity_breach:
+                geovelocity_breach = True
+                risk = "HIGH"
+                conflict_txn       = t
+                conflict_speed_kmh = round(speed_kmh, 0)
+                conflict_dist_km   = round(dist_km, 1)
+                time_diff_hours    = round(diff_hours, 2)
+                # Keep scanning for impossible case
 
         if geovelocity_breach and conflict_txn:
-            risk = "HIGH"
+            verdict = "impossible" if risk == "CRITICAL" else "highly suspicious"
             assessment = (
-                f"Impossible geovelocity breach! Transacted from '{location}' and "
-                f"'{conflict_txn.location}' within {time_diff_hours} hours. "
-                "This indicates impossible physical travel speed."
+                f"{verdict.capitalize()} travel speed detected: {conflict_dist_km} km in "
+                f"{time_diff_hours}h = {conflict_speed_kmh} km/h. "
+                f"Current: {location} ({curr_lat:.4f},{curr_lon:.4f}) — "
+                f"Previous: {conflict_txn.location} ({conflict_txn.latitude:.4f},{conflict_txn.longitude:.4f})."
+            )
+            conflict_info = (
+                f"  Conflict Location    : {conflict_txn.location}\n"
+                f"  Conflict GPS         : {conflict_txn.latitude:.4f}, {conflict_txn.longitude:.4f}\n"
+                f"  Distance (km)        : {conflict_dist_km}\n"
+                f"  Time Difference (Hrs): {time_diff_hours}\n"
+                f"  Implied Speed (km/h) : {conflict_speed_kmh}\n"
             )
         else:
-            risk = "LOW"
-            assessment = "Geographic transition frequency and location velocity are consistent."
-
-        conflict_info = (
-            f"  Conflict Location    : {conflict_txn.location}\n"
-            f"  Conflict Txn Time    : {conflict_txn.transaction_date}\n"
-            f"  Time Difference (Hrs): {time_diff_hours}\n"
-        ) if geovelocity_breach and conflict_txn else ""
+            assessment = "All transaction locations are geographically consistent with plausible travel speeds."
+            conflict_info = ""
 
         return (
             "GEOGRAPHIC VELOCITY REPORT\n"
             f"  Customer ID          : {customer_id}\n"
             f"  Current Location     : {location}\n"
+            f"  Current GPS          : {curr_lat:.4f}, {curr_lon:.4f}\n"
             f"  Geovelocity Breach   : {'Yes — ALERT' if geovelocity_breach else 'No'}\n"
             f"  Geovelocity Risk     : {risk}\n"
             + conflict_info +

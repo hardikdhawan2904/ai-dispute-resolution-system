@@ -54,6 +54,18 @@ def _apply_column_migrations() -> None:
         existing_cols = {c["name"] for c in inspector.get_columns("dispute_cases")}
 
         # Agent 3 — WOA: workflow_plan column
+        # GPS coordinates on transactions
+        if "transactions" in inspector.get_table_names():
+            txn_cols = {c["name"] for c in inspector.get_columns("transactions")}
+            if "latitude" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN latitude FLOAT"))
+                conn.commit()
+                db_logger.info("Migration applied: transactions.latitude added.")
+            if "longitude" not in txn_cols:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN longitude FLOAT"))
+                conn.commit()
+                db_logger.info("Migration applied: transactions.longitude added.")
+
         if "workflow_plan" not in existing_cols:
             conn.execute(text("ALTER TABLE dispute_cases ADD COLUMN workflow_plan JSON"))
             conn.commit()
