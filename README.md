@@ -345,7 +345,7 @@ Generates and delivers professional HTML email notifications. Fires asynchronous
 ## Key Design Decisions
 
 **DB-first fraud scoring, not form-first.**
-ARIA's `score_fraud_indicators` queries `account_events` before trusting any customer form flag. Bank-verified events (SIM_SWAP_DETECTED, OTP_DELIVERED, CARD_LOST_REPORTED, etc.) carry full scoring weight. Unverifiable customer claims (otp_shared, bank_impersonation, remote_access) carry 60% weight and are narrative context only.
+ARIA's `score_fraud_indicators` queries `account_events` before trusting any customer form flag. Bank-verified events (SIM_SWAP_DETECTED, OTP_DELIVERED, CARD_LOST_REPORTED, etc.) carry full scoring weight and affect ARIA's `confidence_score`. Unverifiable customer claims (otp_shared, bank_impersonation, remote_access) score at 60% weight in ARIA — reduced confidence, but still counted. In FRIA, these same signals are narrative context only — they appear in the LLM's written explanation but do not contribute to `fraud_probability`.
 
 **Social engineering signals appear in narrative, not in score.**
 `otp_shared`, `bank_impersonation`, `remote_access`, `screen_sharing`, `phishing_link` — these represent human interactions (phone calls, verbal OTP sharing) that no bank system can record. They inform the LLM's written explanation of the fraud but do not contribute to `fraud_probability`.
