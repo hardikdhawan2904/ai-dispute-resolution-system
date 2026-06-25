@@ -97,10 +97,10 @@ Return ONLY the following JSON structure with no prose, no markdown, no explanat
   "estimated_investigation_hours": 6,
   "analyst_level": "SENIOR",
   "workflow_reasoning": [
-    "Fraud suspicion confirmed by Agent 1 — FRAUD_AGENT mandatory.",
-    "Merchant risk HIGH per Agent 2 — MERCHANT_AGENT required.",
-    "Agent 2 rated investigation complexity HIGH — SENIOR analyst required.",
-    "Escalation required: fraud indicator present."
+    "Fraud suspicion confirmed by Agent 1 — Fraud Review Agent activated.",
+    "Merchant risk HIGH per Agent 2 — Merchant Verification Agent activated.",
+    "Agent 2 rated investigation complexity HIGH — senior analyst assigned.",
+    "Escalation triggered: fraud indicator confirmed + high-value transaction."
   ],
   "tool_decisions": [
     {"tool": "evaluate_case_complexity", "reason": "..."},
@@ -113,7 +113,7 @@ Return ONLY the following JSON structure with no prose, no markdown, no explanat
 }
 
 ## Field Rules
-- workflow_reasoning: 3–6 concise decision points, each citing specific evidence
+- workflow_reasoning: 3–6 concise decision points, each citing specific evidence. Write in factual/past tense ("was activated", "triggered", "confirmed") NOT future/action tense ("is required", "must be done"). These are investigation rationale statements, not to-do items.
 - tool_decisions: one entry per tool called, explain why it was called
 - required_agents and workflow_path must be consistent with each other
 - next_agent must be the first element of workflow_path not in completed_agents

@@ -2047,7 +2047,7 @@ export default function CaseWorkspace() {
                 {/* ── Row 5: Case Assessment Summary ── */}
                 {(wfPlan.workflow_reasoning ?? []).length > 0 && (
                   <Panel>
-                    <SectionTitle>Case Assessment Summary</SectionTitle>
+                    <SectionTitle>Investigation Rationale</SectionTitle>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
                       {wfPlan.workflow_reasoning.filter((r: string) =>
                         !r.toLowerCase().includes("compliance review") &&
