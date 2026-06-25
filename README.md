@@ -69,7 +69,7 @@ At submission time, key fields are overwritten from the bank's own records:
 Reads the customer's dispute data from `dispute_cases` (already saved). Runs 3 pre-computed tools server-side before the LLM call.
 
 **Tools:**
-- `assess_transaction_context` — RBI liability tiers, off-hours risk, CNP channel flags, UPI/IMPS patterns (reads form metadata — factual timestamps, not interpretable customer claims)
+- `assess_transaction_context` — RBI liability tiers, off-hours risk, CNP channel flags, UPI/IMPS patterns. Reads `amount`, `transaction_type`, `merchant`, `transaction_date`, `transaction_time` — all overwritten from the bank's transaction DB at submission time, not raw customer input
 - `score_fraud_indicators` — DB-first fraud scoring. Queries `account_events` for bank-verified signals first, falls back to form flags at 60% weight. Unverifiable claims (otp_shared, bank_impersonation, remote_access, screen_sharing, phishing_link, device_lost) are narrative context only.
 - `verify_evidence_match` — OCR document text vs claimed merchant, amount, and document type
 
