@@ -270,7 +270,7 @@ Risk Levels:  LOW < 0.15 · MEDIUM < 0.40 · HIGH < 0.75 · CRITICAL ≥ 0.75
 
 ### Agent 5 — EIA (Evidence Intelligence Agent)
 
-Audits evidence completeness and consistency. **100% DB — reads from `dispute_cases` and `document_requests`.**
+Audits evidence completeness and consistency. **100% DB — reads from `dispute_cases`, `document_requests`, and `transactions`.**
 
 **Tools:**
 - `evaluate_evidence_completeness` — required docs vs fulfilled requests + upload count
