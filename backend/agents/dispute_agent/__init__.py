@@ -1,19 +1,20 @@
 """
 Agent 1 — ARIA (Dispute Understanding Agent)
 
-Job: Read the customer's submission from the database, use 4 analytical tools
+Job: Read the customer's submission from the database, use 3 analytical tools
      to gather structured intelligence, then classify the dispute and score
      confidence. Nothing more — investigation is Agent 2's responsibility.
 
 DB interaction:
   - Reads case data from dispute_cases by case_id (save-first architecture)
+  - score_fraud_indicators also queries account_events, customer_devices (DB-first)
   - Document texts passed in-memory (already extracted before this call)
 
-Tools (understanding only, no further DB queries):
+Tools (pre-computed server-side before LLM call):
   assess_transaction_context  → amount tier, time-of-day, card-not-present signals
-  score_fraud_indicators      → metadata checklist + comment keyword analysis
+  score_fraud_indicators      → DB-first fraud signal scorer (account_events primary)
   verify_evidence_match       → document corroboration check (called if docs attached)
-  compute_confidence_score    → calibrated confidence from all tool findings
+  Note: compute_confidence_score removed — confidence computed deterministically in finalize_node
 """
 from typing import List, Optional
 

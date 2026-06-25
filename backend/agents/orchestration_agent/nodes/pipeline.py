@@ -175,8 +175,7 @@ def finalize_node(state: OrchestrationAgentState) -> dict:
             authoritative.append("EVIDENCE_AGENT")
         if category in _MERCHANT_CATEGORIES:
             authoritative.append("MERCHANT_AGENT")
-        if any(t in _COMPLIANCE_TAGS for t in tags):
-            authoritative.append("COMPLIANCE_AGENT")
+        # High-risk tags trigger escalation only — COMPLIANCE_AGENT removed
 
         seen = set()
         authoritative_path = [a for a in _AGENT_ORDER if a in authoritative and not seen.add(a)]
@@ -262,8 +261,7 @@ def _fallback_output(
         required.append("FRAUD_AGENT")
     if category in _MERCHANT_CATEGORIES:
         required.append("MERCHANT_AGENT")
-    if any(t in _COMPLIANCE_TAGS for t in (case_input.get("risk_tags") or [])):
-        required.append("COMPLIANCE_AGENT")
+    # High-risk tags trigger escalation only — COMPLIANCE_AGENT removed
 
     if (fraud and amount > 50_000):
         complexity = "CRITICAL"

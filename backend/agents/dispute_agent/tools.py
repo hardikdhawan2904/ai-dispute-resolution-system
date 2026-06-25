@@ -631,6 +631,6 @@ TOOL_REGISTRY: dict = {
     "assess_transaction_context": assess_transaction_context,
     "score_fraud_indicators":     score_fraud_indicators,
     "verify_evidence_match":      verify_evidence_match,
-    "compute_confidence_score":   compute_confidence_score,
+    # compute_confidence_score removed — confidence computed deterministically in finalize_node
 }
 

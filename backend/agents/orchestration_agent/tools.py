@@ -20,7 +20,7 @@ Routing rules (complete):
     required_documents present                                  → EVIDENCE_AGENT
   ATM Cash Issue / Other (always)                              → EVIDENCE_AGENT
   VELOCITY_BREACH / SUSPICIOUS_BEHAVIOR /
-    MERCHANT_BLACKLISTED / regulatory tags                      → COMPLIANCE_AGENT
+    MERCHANT_BLACKLISTED / regulatory tags                      → Escalation trigger only
 """
 from langchain_core.tools import tool
 
@@ -173,7 +173,7 @@ def determine_required_agents(case_id: str) -> str:
     against the routing rule table. Returns the required agent identifiers.
     Routing rules: Unauthorized/Fraud → FRAUD_AGENT; Merchant/Refund/Product/
     Subscription → MERCHANT_AGENT; Missing evidence → EVIDENCE_AGENT;
-    Velocity/Suspicious/Blacklist tags → COMPLIANCE_AGENT."""
+    High-risk tags trigger escalation only — COMPLIANCE_AGENT removed."""
     try:
         c = _read_case(case_id)
         if not c:
@@ -226,7 +226,7 @@ def recommend_workflow_path(case_id: str) -> str:
     """Build an ordered execution sequence for the required specialist agents,
     respecting dependency rules. FRAUD_AGENT always runs first when present
     (fraud classification informs all other agents). EVIDENCE_AGENT runs before
-    MERCHANT_AGENT and COMPLIANCE_AGENT so they have complete evidence context.
+    MERCHANT_AGENT so it has complete evidence context.
     Returns the ordered workflow path and dependency mapping."""
     try:
         c = _read_case(case_id)
@@ -251,19 +251,17 @@ def recommend_workflow_path(case_id: str) -> str:
         if category in _MERCHANT_CATEGORIES:
             required.append("MERCHANT_AGENT")
 
-        compliance_triggers = [t for t in c["risk_tags"] if t in _COMPLIANCE_TAGS]
-        if compliance_triggers:
-            required.append("COMPLIANCE_AGENT")
+        # High-risk tags trigger escalation only — no separate COMPLIANCE_AGENT
+        # compliance_triggers kept for escalation_level calculation in assess_escalation_need
 
         # Enforce canonical order (dedup preserving order)
         seen = set()
         path = [a for a in _AGENT_ORDER if a in required and not seen.add(a)]
 
         deps = {
-            "FRAUD_AGENT":      [],
-            "EVIDENCE_AGENT":   ["FRAUD_AGENT"] if "FRAUD_AGENT" in path else [],
-            "MERCHANT_AGENT":   ["EVIDENCE_AGENT"] if "EVIDENCE_AGENT" in path else [],
-            "COMPLIANCE_AGENT": ["FRAUD_AGENT"] if "FRAUD_AGENT" in path else [],
+            "FRAUD_AGENT":    [],
+            "EVIDENCE_AGENT": ["FRAUD_AGENT"] if "FRAUD_AGENT" in path else [],
+            "MERCHANT_AGENT": ["EVIDENCE_AGENT"] if "EVIDENCE_AGENT" in path else [],
         }
         active_deps = {k: v for k, v in deps.items() if k in path}
         dep_str = "\n".join(f"    {k}: depends on {v}" for k, v in active_deps.items()) if active_deps else "    None"
@@ -457,8 +455,7 @@ def determine_next_execution_step(case_id: str) -> str:
             required.append("EVIDENCE_AGENT")
         if category in _MERCHANT_CATEGORIES:
             required.append("MERCHANT_AGENT")
-        if any(t in _COMPLIANCE_TAGS for t in tags):
-            required.append("COMPLIANCE_AGENT")
+        # High-risk tags trigger escalation only — COMPLIANCE_AGENT removed
 
         seen = set()
         planned_path = [a for a in _AGENT_ORDER if a in required and not seen.add(a)]
@@ -472,10 +469,9 @@ def determine_next_execution_step(case_id: str) -> str:
 
         # Dependency map
         deps = {
-            "FRAUD_AGENT":      [],
-            "EVIDENCE_AGENT":   ["FRAUD_AGENT"] if "FRAUD_AGENT" in planned_path else [],
-            "MERCHANT_AGENT":   ["EVIDENCE_AGENT"] if "EVIDENCE_AGENT" in planned_path else [],
-            "COMPLIANCE_AGENT": ["FRAUD_AGENT"] if "FRAUD_AGENT" in planned_path else [],
+            "FRAUD_AGENT":    [],
+            "EVIDENCE_AGENT": ["FRAUD_AGENT"] if "FRAUD_AGENT" in planned_path else [],
+            "MERCHANT_AGENT": ["EVIDENCE_AGENT"] if "EVIDENCE_AGENT" in planned_path else [],
         }
 
         # Find the first agent whose dependencies are satisfied and is not completed
