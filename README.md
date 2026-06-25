@@ -287,20 +287,18 @@ Audits evidence completeness and consistency. **100% DB — reads from `dispute_
 
 Generates and delivers professional HTML email notifications. Fires asynchronously — never blocks the workflow.
 
-**8 notification types:**
+**8 notification types (6 customer-facing, 2 internal-suppressed):**
 
-| Type | Trigger |
-|---|---|
-| `CASE_RECEIVED` | Case submitted (auto, once) |
-| `INVESTIGATION_STARTED` | IIA completes (auto, once) |
-| `DOCUMENT_REQUESTED` | Analyst creates document request |
-| `CASE_RESOLVED` | Case resolved/closed/rejected |
-| `CASE_REJECTED` | Case rejected |
-| `CASE_REOPENED` | Case reopened |
-| `STATUS_CHANGED` | Major status transition |
-| `DOCUMENTS_RECEIVED` | Customer uploads documents |
-
-Internal-only transitions (FRAUD_REVIEW_STARTED, EVIDENCE_REVIEW_COMPLETED) are suppressed from auto-sending.
+| Type | Trigger | Auto |
+|---|---|---|
+| `CASE_RECEIVED` | Case submitted | Once per case |
+| `INVESTIGATION_STARTED` | IIA completes | Once per case |
+| `DOCUMENT_REQUESTED` | Analyst creates document request | Every action |
+| `CASE_RESOLVED` | Case resolved / closed / rejected | Once per case |
+| `STATUS_CHANGED` | Major status transition | On transition |
+| `DOCUMENTS_RECEIVED` | Customer uploads documents | Every upload |
+| `FRAUD_REVIEW_STARTED` | Internal — **suppressed** from auto-send | Manual only |
+| `EVIDENCE_REVIEW_COMPLETED` | Internal — **suppressed** from auto-send | Manual only |
 
 **Delivery:** Outlook SMTP (`smtp.office365.com:587` TLS). Demo mode redirects all mail to `NOTIFICATION_EMAIL`.
 
@@ -311,13 +309,15 @@ Internal-only transitions (FRAUD_REVIEW_STARTED, EVIDENCE_REVIEW_COMPLETED) are 
 | Table | Records | Purpose |
 |---|---|---|
 | `dispute_cases` | 5 live | Active dispute cases with full agent output |
-| `dispute_history` | 600+ | Pre-seeded historical resolved cases |
+| `dispute_history` | 529 | Pre-seeded historical resolved cases |
 | `bank_customers` | 1,000 | Customer CIF records |
-| `transactions` | 11,000+ | Full transaction history with GPS coords, device_id, card_entry_mode |
-| `merchant_profiles` | ~500 | Bank merchant risk profiles |
+| `transactions` | 11,512 | Full transaction history with GPS coords, device_id, card_entry_mode |
+| `merchant_profiles` | 98 | Bank merchant risk profiles |
 | `account_events` | 5,705 | Bank security events (SIM_SWAP, DEVICE_REGISTERED, OTP_DELIVERED, etc.) |
 | `customer_devices` | 7,494 | Registered customer devices with trust status |
 | `beneficiaries` | 9,347 | Known payees per customer |
+| `case_notes` | grows | Analyst notes per case |
+| `workflow_states` | grows | LangGraph workflow execution states |
 | `audit_logs` | grows | Immutable event log |
 | `communication_logs` | grows | Sent email records |
 | `document_requests` | grows | Analyst document requests |
